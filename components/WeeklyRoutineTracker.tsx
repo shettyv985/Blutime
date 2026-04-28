@@ -99,7 +99,7 @@ export function WeeklyRoutineTracker({
     if (!isTrackedFamily(rule.campaign_type)) continue;
 
     const key = `${rule.client_name}__${rule.campaign_type}`;
-    const current = clientWeeklyMap.get(key) ?? {
+        const current: ClientWeekSummary = clientWeeklyMap.get(key) ?? {
       key,
       clientName: rule.client_name,
       family: rule.campaign_type,
@@ -114,6 +114,7 @@ export function WeeklyRoutineTracker({
       week4Done: 0,
       totalDone: 0,
     };
+
 
     current.monthlyTotal += getRuleDeliverableTotal(rule);
     clientWeeklyMap.set(key, current);
@@ -130,7 +131,7 @@ export function WeeklyRoutineTracker({
     const key = `${item.client_name}__${item.campaign_type}`;
     const week = getWeekNumber(item.work_date);
 
-    const current = clientWeeklyMap.get(key) ?? {
+        const current: ClientWeekSummary = clientWeeklyMap.get(key) ?? {
       key,
       clientName: item.client_name,
       family: item.campaign_type,
@@ -145,6 +146,7 @@ export function WeeklyRoutineTracker({
       week4Done: 0,
       totalDone: 0,
     };
+
 
     current.totalDone += item.completed_count;
 

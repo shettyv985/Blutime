@@ -1,0 +1,15 @@
+export const categories = [
+  "Social Media - AI",
+  "Social Media - Normal",
+  "Ads - AI",
+  "Ads - Normal",
+  "Video -Ads- AI",
+  "Video -Ads- Normal",
+  "Video -Social Media- AI",
+  "Video -Social Media- Normal",
+  "Meeting",
+  "Operational Activities",
+  "Website",
+  "SEO",
+  "Production",
+];

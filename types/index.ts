@@ -126,3 +126,4 @@ export type CampaignRule = {
   extra_if_target_not_met: boolean;
   is_active: boolean;
 };
+

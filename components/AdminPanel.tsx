@@ -16,9 +16,11 @@ import type {
   Client,
   Holiday,
   MemberAvailability,
+  MemberClientAssignment,
   RoutineItem,
   TeamMember,
 } from "../types";
+
 import { WeeklyRoutineTracker } from "./WeeklyRoutineTracker";
 import { HolidayLeaveManager } from "./HolidayLeaveManager";
 

@@ -16,7 +16,6 @@ export type ActiveTimer = {
   runningSince: number | null;
   outputText: string;
   persisted?: boolean;
-
 };
 
 export type TimeLog = {
@@ -85,6 +84,8 @@ export type CampaignRule = {
   static_count: number;
   video_count: number;
   canva_count: number;
+  ai_video_count: number;
+  shoot_video_count: number;
   extra_if_target_not_met: boolean;
   is_active: boolean;
 };
@@ -112,18 +113,3 @@ export type MemberAvailability = {
   capacity_override: number | null;
   reason?: string | null;
 };
-export type CampaignRule = {
-  id: string;
-  pod: string;
-  account_manager: string;
-  client_name: string;
-  campaign_type: "performance" | "social_media";
-  static_count: number;
-  video_count: number;
-  canva_count: number;
-  ai_video_count: number;
-  shoot_video_count: number;
-  extra_if_target_not_met: boolean;
-  is_active: boolean;
-};
-

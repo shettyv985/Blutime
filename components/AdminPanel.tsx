@@ -650,7 +650,8 @@ export function AdminPanel({
               desc="active categories"
               inputValue={newCategory}
               inputPlaceholder="New category name"
-              items={categories.map((c) => ({ id: c.id, label: c.name }))}
+items={categories.map((c) => ({ id: String(c.id), label: c.name }))}
+
               onInputChange={onNewCategoryChange}
               onAdd={onAddCategory}
               renderItem={(item) => (
@@ -659,7 +660,8 @@ export function AdminPanel({
                   <button
                     className="btn-danger"
                     style={{ flexShrink: 0 }}
-                    onClick={() => onDeleteCategory(categories.find((c) => c.id === item.id)!)}
+                    onClick={() => onDeleteCategory(categories.find((c) => String(c.id) === item.id)!
+)}
                   >
                     Remove
                   </button>
@@ -668,28 +670,30 @@ export function AdminPanel({
             />
 
             <SettingsListCard
-              title="Admins"
-              count={admins.length}
-              desc="admin users"
-              inputValue={newAdminEmail}
-              inputPlaceholder="Admin email"
-              inputType="email"
-              items={admins.map((a) => ({ id: a.id, label: a.email }))}
-              onInputChange={onNewAdminEmailChange}
-              onAdd={onAddAdmin}
-              renderItem={(item) => (
-                <div key={item.id} style={listItemRowStyle}>
-                  <span style={{ fontSize: "0.83rem", fontWeight: 500, wordBreak: "break-all" }}>{item.label}</span>
-                  <button
-                    className="btn-danger"
-                    style={{ flexShrink: 0 }}
-                    onClick={() => onRemoveAdmin(admins.find((a) => a.id === item.id)!)}
-                  >
-                    Remove
-                  </button>
-                </div>
-              )}
-            />
+  title="Categories"
+  count={categories.length}
+  desc="active categories"
+  inputValue={newCategory}
+  inputPlaceholder="New category name"
+  items={categories.map((c) => ({ id: String(c.id), label: c.name }))}
+  onInputChange={onNewCategoryChange}
+  onAdd={onAddCategory}
+  renderItem={(item) => (
+    <div key={item.id} style={listItemRowStyle}>
+      <span style={{ fontSize: "0.83rem", fontWeight: 500, wordBreak: "break-word" }}>
+        {item.label}
+      </span>
+      <button
+        className="btn-danger"
+        style={{ flexShrink: 0 }}
+        onClick={() => onDeleteCategory(categories.find((c) => String(c.id) === item.id)!)}
+      >
+        Remove
+      </button>
+    </div>
+  )}
+/>
+
           </div>
         )}
       </div>

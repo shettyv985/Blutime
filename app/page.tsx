@@ -1706,75 +1706,70 @@ export default function Home() {
     await loadAdminData();
   }
 
-  async function updateLog(
-    logId: string,
-    patch: {
-      started_at: string;
-      ended_at: string;
-      task_text: string;
-      client_id: string;
-      category: string;
-      output_text: string;
-    }
-  ) {
-    const startedAt = new Date(patch.started_at);
-    const endedAt = new Date(patch.ended_at);
-
-    if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) {
-      alert("Please enter valid start and end date/time values.");
-      return;
-    }
-
-    if (endedAt <= startedAt) {
-      alert("End time must be later than start time.");
-      return;
-    }
-
-    const matchedClient = clients.find((client) => client.id === patch.client_id);
-    if (!matchedClient) {
-      alert("Please select a client.");
-      return;
-    }
-
-    if (!patch.category) {
-      alert("Please select a category.");
-      return;
-    }
-
-    const totalSeconds = Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000);
-
-    const { data: updatedLog, error } = await supabase
-      .from("time_logs")
-      .update({
-        started_at: startedAt.toISOString(),
-        ended_at: endedAt.toISOString(),
-        total_seconds: totalSeconds,
-        task_text: patch.task_text.trim(),
-        client_id: matchedClient.id,
-        client_name: matchedClient.name,
-        category: patch.category,
-        output_text: patch.output_text.trim(),
-      })
-      .eq("id", logId)
-      .select("*")
-      .single();
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    setLogs((current) =>
-      current.map((log) => (log.id === logId ? ((updatedLog as TimeLog) ?? log) : log))
-    );
-
-    if (isAdmin) {
-      setAdminLogs((current) =>
-        current.map((log) => (log.id === logId ? ((updatedLog as AdminLog) ?? log) : log))
-      );
-      await loadAdminData();
-    }
+ async function updateLog(
+  logId: string,
+  patch: {
+    started_at: string;
+    ended_at: string;
+    task_text: string;
+    client_id: string;
+    category: string;
+    output_text: string;
   }
+) {
+  const startedAt = new Date(patch.started_at);
+  const endedAt = new Date(patch.ended_at);
+
+  if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) {
+    alert("Please enter valid start and end date/time values.");
+    return;
+  }
+
+  if (endedAt <= startedAt) {
+    alert("End time must be later than start time.");
+    return;
+  }
+
+  const matchedClient = clients.find((client) => client.id === patch.client_id);
+  if (!matchedClient) {
+    alert("Please select a client.");
+    return;
+  }
+
+  if (!patch.category) {
+    alert("Please select a category.");
+    return;
+  }
+
+  const totalSeconds = Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000);
+
+  const { error } = await supabase
+    .from("time_logs")
+    .update({
+      started_at: startedAt.toISOString(),
+      ended_at: endedAt.toISOString(),
+      total_seconds: totalSeconds,
+      task_text: patch.task_text.trim(),
+      client_id: matchedClient.id,
+      client_name: matchedClient.name,
+      category: patch.category,
+      output_text: patch.output_text.trim(),
+    })
+    .eq("id", logId)
+    .eq("user_id", user.id);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await loadLogs();
+
+  if (isAdmin) {
+    await loadAdminData();
+  }
+}
+
 
   async function deleteOwnLog(logId: string) {
     const confirmed = confirm("Delete this log permanently?");

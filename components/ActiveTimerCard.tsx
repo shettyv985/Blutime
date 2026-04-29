@@ -9,6 +9,7 @@ type ActiveTimerCardProps = {
   onResume: (id: string) => void;
   onOutputChange: (id: string, value: string) => void;
   onStop: (timer: ActiveTimer) => void;
+  onCancel: (id: string) => void;
 };
 
 export function ActiveTimerCard({
@@ -18,6 +19,7 @@ export function ActiveTimerCard({
   onResume,
   onOutputChange,
   onStop,
+  onCancel,
 }: ActiveTimerCardProps) {
   const isRunning = Boolean(timer.runningSince);
   const [hh, mm, ss] = formatDuration(elapsed).split(":");
@@ -240,6 +242,25 @@ export function ActiveTimerCard({
               <rect x="3" y="3" width="18" height="18" rx="2"/>
             </svg>
             Stop & save
+          </button>
+
+          <button
+            onClick={() => onCancel(timer.id)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              borderRadius: "var(--radius-md)",
+              padding: "0.5rem 1rem",
+              fontSize: "0.8rem",
+              fontWeight: 700,
+              color: "var(--foreground)",
+              background: "var(--surface-soft)",
+              border: "1px solid var(--border)",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            Cancel
           </button>
         </div>
       </div>

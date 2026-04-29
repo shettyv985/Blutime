@@ -21,6 +21,7 @@ export type ActiveTimer = {
 export type TimeLog = {
   id: string;
   user_email?: string;
+  client_id?: string | null;
   routine_item_id?: string | null;
   task_text: string;
   output_text: string;

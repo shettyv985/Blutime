@@ -1395,7 +1395,7 @@ export default function Home() {
       const shootVideoCount =
         rule.shoot_video_count ?? Math.max(0, rule.video_count - aiVideoCount);
       const totalVideoCount = aiVideoCount + shootVideoCount;
-      const writerTotal = rule.static_count + totalVideoCount;
+      const writerTotal = rule.static_count + rule.canva_count + totalVideoCount;
 
       if (rule.campaign_type === "social_media") {
         const weeklyMinimum = getSocialWeeklyMinimum(rule.client_name);

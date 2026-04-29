@@ -1775,15 +1775,118 @@ export default function Home() {
     const confirmed = confirm("Delete this log permanently?");
     if (!confirmed) return;
 
-    const { error } = await supabase
+    const { data: logToDelete, error: fetchError } = await supabase
+      .from("time_logs")
+      .select("*")
+      .eq("id", logId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (fetchError) {
+      alert(fetchError.message);
+      return;
+    }
+
+    let linkedRoutineItem: RoutineItem | null = null;
+    let originalRoutineItem: RoutineItem | null = null;
+
+    if (logToDelete?.routine_item_id) {
+      const { data, error: routineFetchError } = await supabase
+        .from("routine_items")
+        .select("*")
+        .eq("id", logToDelete.routine_item_id)
+        .single();
+
+      if (routineFetchError) {
+        alert(routineFetchError.message);
+        return;
+      }
+
+      linkedRoutineItem = data;
+
+      const originalRoutineItemId = extractOriginalRoutineItemId(linkedRoutineItem?.notes);
+
+      if (originalRoutineItemId) {
+        const { data: originalData, error: originalFetchError } = await supabase
+          .from("routine_items")
+          .select("*")
+          .eq("id", originalRoutineItemId)
+          .single();
+
+        if (originalFetchError) {
+          alert(originalFetchError.message);
+          return;
+        }
+
+        originalRoutineItem = originalData;
+      }
+    }
+
+    const { error: deleteLogError } = await supabase
       .from("time_logs")
       .delete()
       .eq("id", logId)
       .eq("user_id", user.id);
 
-    if (error) {
-      alert(error.message);
+    if (deleteLogError) {
+      alert(deleteLogError.message);
       return;
+    }
+
+    if (linkedRoutineItem) {
+      if (originalRoutineItem) {
+        const nextCompletedCount = Math.max(0, (linkedRoutineItem.completed_count ?? 0) - 1);
+        const nextPlannedCount = Math.max(0, (linkedRoutineItem.planned_count ?? 0) - 1);
+
+        if (nextPlannedCount === 0 && nextCompletedCount === 0) {
+          const { error: reassignedDeleteError } = await supabase
+            .from("routine_items")
+            .delete()
+            .eq("id", linkedRoutineItem.id);
+
+          if (reassignedDeleteError) {
+            alert(reassignedDeleteError.message);
+            return;
+          }
+        } else {
+          const { error: reassignedUpdateError } = await supabase
+            .from("routine_items")
+            .update({
+              planned_count: nextPlannedCount,
+              completed_count: nextCompletedCount,
+            })
+            .eq("id", linkedRoutineItem.id);
+
+          if (reassignedUpdateError) {
+            alert(reassignedUpdateError.message);
+            return;
+          }
+        }
+
+        const { error: originalUpdateError } = await supabase
+          .from("routine_items")
+          .update({
+            planned_count: (originalRoutineItem.planned_count ?? 0) + 1,
+          })
+          .eq("id", originalRoutineItem.id);
+
+        if (originalUpdateError) {
+          alert(originalUpdateError.message);
+          return;
+        }
+      } else {
+        const nextCompletedCount = Math.max(0, (linkedRoutineItem.completed_count ?? 0) - 1);
+
+        const { error: routineUpdateError } = await supabase
+          .from("routine_items")
+          .update({ completed_count: nextCompletedCount })
+          .eq("id", linkedRoutineItem.id);
+
+        if (routineUpdateError) {
+          alert(routineUpdateError.message);
+          return;
+        }
+      }
     }
 
     setLogs((current) => current.filter((log) => log.id !== logId));

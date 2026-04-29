@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Category, Client, TimeLog } from "../types";
 import { formatDuration } from "../lib/time";
+import { LinkifiedText } from "./LinkifiedText";
 
 type LogsTableProps = {
   logs: TimeLog[];
@@ -35,6 +36,17 @@ function toDateTimeLocal(value: string) {
   const date = new Date(value);
   const offsetMs = date.getTimezoneOffset() * 60 * 1000;
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function draftFromLog(log: TimeLog, clients: Client[]): LogDraft {
@@ -72,6 +84,7 @@ export function LogsTable({
   onDeleteLog,
 }: LogsTableProps) {
   const [drafts, setDrafts] = useState<Record<string, LogDraft>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -95,6 +108,22 @@ export function LogsTable({
     }));
   }
 
+  function handleEdit(log: TimeLog) {
+    setDrafts((current) => ({
+      ...current,
+      [log.id]: draftFromLog(log, clients),
+    }));
+    setEditingId(log.id);
+  }
+
+  function handleCancelEdit(log: TimeLog) {
+    setDrafts((current) => ({
+      ...current,
+      [log.id]: draftFromLog(log, clients),
+    }));
+    setEditingId(null);
+  }
+
   async function handleSave(logId: string) {
     const draft = drafts[logId];
     if (!draft) return;
@@ -102,6 +131,7 @@ export function LogsTable({
     setSavingId(logId);
     try {
       await onSaveLog(logId, draft);
+      setEditingId(null);
     } finally {
       setSavingId(null);
     }
@@ -111,6 +141,9 @@ export function LogsTable({
     setDeletingId(logId);
     try {
       await onDeleteLog(logId);
+      if (editingId === logId) {
+        setEditingId(null);
+      }
     } finally {
       setDeletingId(null);
     }
@@ -129,14 +162,14 @@ export function LogsTable({
       >
         <div>
           <h2 className="section-title">My logs</h2>
-          <p className="section-desc">Edit or delete your completed activity history.</p>
+          <p className="section-desc">Completed activity history.</p>
         </div>
         {logs.length > 0 && <span className="badge badge-primary">{logs.length} entries</span>}
       </div>
 
       <div className="card" style={{ borderRadius: "var(--radius-xl)", overflow: "hidden" }}>
         <div className="overflow-x-auto scroll-area">
-          <table className="data-table" style={{ minWidth: "1420px" }}>
+          <table className="data-table" style={{ minWidth: "1180px" }}>
             <thead>
               <tr>
                 <th>Start</th>
@@ -152,125 +185,213 @@ export function LogsTable({
             <tbody>
               {logs.map((log) => {
                 const draft = drafts[log.id];
-                if (!draft) return null;
-
+                const isEditing = editingId === log.id;
                 const isSaving = savingId === log.id;
                 const isDeleting = deletingId === log.id;
 
+                if (!draft) return null;
+
+                if (isEditing) {
+                  return (
+                    <tr key={log.id}>
+                      <td>
+                        <input
+                          className="field"
+                          type="datetime-local"
+                          value={draft.started_at}
+                          onChange={(event) =>
+                            updateDraft(log.id, { started_at: event.target.value })
+                          }
+                          style={{ minWidth: "190px", fontSize: "0.8rem" }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          className="field"
+                          type="datetime-local"
+                          value={draft.ended_at}
+                          onChange={(event) =>
+                            updateDraft(log.id, { ended_at: event.target.value })
+                          }
+                          style={{ minWidth: "190px", fontSize: "0.8rem" }}
+                        />
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <span
+                          className="timer-display"
+                          style={{
+                            color: "var(--primary)",
+                            fontWeight: 600,
+                            fontSize: "0.875rem",
+                          }}
+                        >
+                          {formatDuration(getDraftDurationSeconds(draft))}
+                        </span>
+                      </td>
+                      <td>
+                        <textarea
+                          className="field scroll-area"
+                          value={draft.task_text}
+                          onChange={(event) =>
+                            updateDraft(log.id, { task_text: event.target.value })
+                          }
+                          style={{
+                            minWidth: "240px",
+                            minHeight: "74px",
+                            resize: "vertical",
+                            fontSize: "0.82rem",
+                          }}
+                        />
+                      </td>
+                      <td>
+                        <select
+                          className="field"
+                          value={draft.client_id}
+                          onChange={(event) =>
+                            updateDraft(log.id, { client_id: event.target.value })
+                          }
+                          style={{ minWidth: "170px", fontSize: "0.8rem" }}
+                        >
+                          <option value="">Select client</option>
+                          {clients.map((client) => (
+                            <option key={client.id} value={client.id}>
+                              {client.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          className="field"
+                          value={draft.category}
+                          onChange={(event) =>
+                            updateDraft(log.id, { category: event.target.value })
+                          }
+                          style={{ minWidth: "170px", fontSize: "0.8rem" }}
+                        >
+                          <option value="">Select category</option>
+                          {categories.map((category) => (
+                            <option key={category.id} value={category.name}>
+                              {category.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <textarea
+                          className="field scroll-area"
+                          value={draft.output_text}
+                          onChange={(event) =>
+                            updateDraft(log.id, { output_text: event.target.value })
+                          }
+                          style={{
+                            minWidth: "220px",
+                            minHeight: "74px",
+                            resize: "vertical",
+                            fontSize: "0.82rem",
+                          }}
+                        />
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                          <button
+                            className="btn-primary"
+                            onClick={() => handleSave(log.id)}
+                            disabled={isSaving || isDeleting}
+                            style={{ minWidth: "96px" }}
+                          >
+                            {isSaving ? "Saving..." : "Save"}
+                          </button>
+                          <button
+                            onClick={() => handleCancelEdit(log)}
+                            disabled={isSaving || isDeleting}
+                            style={{
+                              borderRadius: "var(--radius-md)",
+                              padding: "0.5rem 0.9rem",
+                              fontSize: "0.8rem",
+                              fontWeight: 700,
+                              color: "var(--foreground)",
+                              background: "var(--surface-soft)",
+                              border: "1px solid var(--border)",
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
                 return (
                   <tr key={log.id}>
-                    <td>
-                      <input
-                        className="field"
-                        type="datetime-local"
-                        value={draft.started_at}
-                        onChange={(event) =>
-                          updateDraft(log.id, { started_at: event.target.value })
-                        }
-                        style={{ minWidth: "190px", fontSize: "0.8rem" }}
-                      />
+                    <td style={{ whiteSpace: "nowrap", fontSize: "0.78rem", color: "var(--muted)" }}>
+                      {formatDateTime(log.started_at)}
                     </td>
-                    <td>
-                      <input
-                        className="field"
-                        type="datetime-local"
-                        value={draft.ended_at}
-                        onChange={(event) =>
-                          updateDraft(log.id, { ended_at: event.target.value })
-                        }
-                        style={{ minWidth: "190px", fontSize: "0.8rem" }}
-                      />
+                    <td style={{ whiteSpace: "nowrap", fontSize: "0.78rem", color: "var(--muted)" }}>
+                      {formatDateTime(log.ended_at)}
                     </td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       <span
                         className="timer-display"
-                        style={{
-                          color: "var(--primary)",
-                          fontWeight: 600,
-                          fontSize: "0.875rem",
-                        }}
+                        style={{ color: "var(--primary)", fontWeight: 600, fontSize: "0.875rem" }}
                       >
-                        {formatDuration(getDraftDurationSeconds(draft))}
+                        {formatDuration(log.total_seconds)}
                       </span>
                     </td>
-                    <td>
-                      <textarea
-                        className="field scroll-area"
-                        value={draft.task_text}
-                        onChange={(event) =>
-                          updateDraft(log.id, { task_text: event.target.value })
-                        }
+                    <td style={{ maxWidth: "240px", wordBreak: "break-word", fontWeight: 500 }}>
+                      <LinkifiedText text={log.task_text} />
+                    </td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <span className="badge badge-primary">{log.client_name}</span>
+                    </td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <span
                         style={{
-                          minWidth: "260px",
-                          minHeight: "76px",
-                          resize: "vertical",
-                          fontSize: "0.82rem",
+                          borderRadius: "var(--radius-xs)",
+                          padding: "0.15rem 0.5rem",
+                          fontSize: "0.72rem",
+                          fontWeight: 600,
+                          background: "var(--surface-soft)",
+                          color: "var(--muted)",
+                          border: "1px solid var(--border-soft)",
                         }}
-                      />
-                    </td>
-                    <td>
-                      <select
-                        className="field"
-                        value={draft.client_id}
-                        onChange={(event) =>
-                          updateDraft(log.id, { client_id: event.target.value })
-                        }
-                        style={{ minWidth: "180px", fontSize: "0.8rem" }}
                       >
-                        <option value="">Select client</option>
-                        {clients.map((client) => (
-                          <option key={client.id} value={client.id}>
-                            {client.name}
-                          </option>
-                        ))}
-                      </select>
+                        {log.category}
+                      </span>
                     </td>
-                    <td>
-                      <select
-                        className="field"
-                        value={draft.category}
-                        onChange={(event) =>
-                          updateDraft(log.id, { category: event.target.value })
-                        }
-                        style={{ minWidth: "180px", fontSize: "0.8rem" }}
-                      >
-                        <option value="">Select category</option>
-                        {categories.map((category) => (
-                          <option key={category.id} value={category.name}>
-                            {category.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <textarea
-                        className="field scroll-area"
-                        value={draft.output_text}
-                        onChange={(event) =>
-                          updateDraft(log.id, { output_text: event.target.value })
-                        }
-                        style={{
-                          minWidth: "240px",
-                          minHeight: "76px",
-                          resize: "vertical",
-                          fontSize: "0.82rem",
-                        }}
-                      />
+                    <td
+                      style={{
+                        maxWidth: "220px",
+                        wordBreak: "break-word",
+                        fontSize: "0.8rem",
+                        color: "var(--muted)",
+                      }}
+                    >
+                      <LinkifiedText text={log.output_text} emptyText="-" />
                     </td>
                     <td>
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                         <button
-                          className="btn-primary"
-                          onClick={() => handleSave(log.id)}
-                          disabled={isSaving || isDeleting}
-                          style={{ minWidth: "110px" }}
+                          onClick={() => handleEdit(log)}
+                          disabled={isDeleting}
+                          style={{
+                            borderRadius: "var(--radius-md)",
+                            padding: "0.5rem 0.9rem",
+                            fontSize: "0.8rem",
+                            fontWeight: 700,
+                            color: "var(--foreground)",
+                            background: "var(--surface-soft)",
+                            border: "1px solid var(--border)",
+                            minWidth: "96px",
+                          }}
                         >
-                          {isSaving ? "Saving..." : "Save"}
+                          Edit
                         </button>
                         <button
                           className="btn-danger"
                           onClick={() => handleDelete(log.id)}
-                          disabled={isSaving || isDeleting}
+                          disabled={isDeleting}
                         >
                           {isDeleting ? "Deleting..." : "Delete"}
                         </button>

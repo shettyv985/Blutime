@@ -1743,7 +1743,7 @@ export default function Home() {
 
     const totalSeconds = Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000);
 
-    const { error } = await supabase
+    const { data: updatedLog, error } = await supabase
       .from("time_logs")
       .update({
         started_at: startedAt.toISOString(),
@@ -1755,18 +1755,54 @@ export default function Home() {
         category: patch.category,
         output_text: patch.output_text.trim(),
       })
-      .eq("id", logId);
+      .eq("id", logId)
+      .select("*")
+      .single();
 
     if (error) {
       alert(error.message);
       return;
     }
 
-    await loadLogs();
+    setLogs((current) =>
+      current.map((log) => (log.id === logId ? ((updatedLog as TimeLog) ?? log) : log))
+    );
 
     if (isAdmin) {
+      setAdminLogs((current) =>
+        current.map((log) => (log.id === logId ? ((updatedLog as AdminLog) ?? log) : log))
+      );
       await loadAdminData();
     }
+  }
+
+  async function deleteOwnLog(logId: string) {
+    const confirmed = confirm("Delete this log permanently?");
+    if (!confirmed) return;
+
+    const { error } = await supabase
+      .from("time_logs")
+      .delete()
+      .eq("id", logId)
+      .eq("user_id", user.id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    setLogs((current) => current.filter((log) => log.id !== logId));
+
+    if (isAdmin) {
+      setAdminLogs((current) => current.filter((log) => log.id !== logId));
+      await loadAdminData();
+    }
+
+    if (currentMember) {
+      await loadMemberRoutineItems(currentMember);
+    }
+
+    await loadRoutineBoardData();
   }
 
       async function deleteLog(logId: string) {
@@ -2473,7 +2509,7 @@ export default function Home() {
           clients={clients}
           categories={categories}
           onSaveLog={updateLog}
-          onDeleteLog={deleteLog}
+          onDeleteLog={deleteOwnLog}
         />
 
         {isAdmin && (

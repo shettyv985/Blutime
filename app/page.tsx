@@ -38,7 +38,7 @@ export default function Home() {
   const [clients, setClients] = useState<Client[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [logs, setLogs] = useState<TimeLog[]>([]);
-    const [showRoutineBoard, setShowRoutineBoard] = useState(false);
+  const [showRoutineBoard, setShowRoutineBoard] = useState(false);
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminLogs, setAdminLogs] = useState<AdminLog[]>([]);
@@ -74,8 +74,7 @@ export default function Home() {
 
   const [memberRoutineItems, setMemberRoutineItems] = useState<RoutineItem[]>([]);
   const [selectedRoutineItemId, setSelectedRoutineItemId] = useState("");
-    const [selectedRoutineLocked, setSelectedRoutineLocked] = useState(false);
-  
+  const [selectedRoutineLocked, setSelectedRoutineLocked] = useState(false);
 
   const [newHolidayDate, setNewHolidayDate] = useState("");
   const [newHolidayName, setNewHolidayName] = useState("");
@@ -94,11 +93,10 @@ export default function Home() {
   const [newCampaignCanvaCount, setNewCampaignCanvaCount] = useState(0);
   const [newCampaignAiVideoCount, setNewCampaignAiVideoCount] = useState(0);
   const [newCampaignShootVideoCount, setNewCampaignShootVideoCount] = useState(0);
-    const [authLoading, setAuthLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [newAssignmentClientName, setNewAssignmentClientName] = useState("");
   const [newAssignmentMemberId, setNewAssignmentMemberId] = useState("");
-
 
   const canStart = Boolean(taskText.trim() && clientId && category);
 
@@ -106,7 +104,7 @@ export default function Home() {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
-      useEffect(() => {
+  useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
       setAuthLoading(false);
@@ -119,8 +117,6 @@ export default function Home() {
 
     return () => listener.subscription.unsubscribe();
   }, []);
-
-
 
   useEffect(() => {
     const interval = setInterval(() => setTick(Date.now()), 1000);
@@ -150,8 +146,7 @@ export default function Home() {
     loadLogs();
   }, [user]);
 
-
-      useEffect(() => {
+  useEffect(() => {
     if (!currentMember) {
       setMemberRoutineItems([]);
       setSelectedRoutineItemId("");
@@ -161,8 +156,6 @@ export default function Home() {
 
     loadMemberRoutineItems(currentMember);
   }, [currentMember]);
-
-
 
   useEffect(() => {
     if (!user?.email) return;
@@ -175,10 +168,9 @@ export default function Home() {
     saveTimers(user.email, timers);
   }, [timers, user?.email]);
 
-    useEffect(() => {
+  useEffect(() => {
     setMounted(true);
   }, []);
-
 
   async function loadCurrentMember() {
     const { data } = await supabase
@@ -261,7 +253,8 @@ export default function Home() {
     setHolidays(holidaysData ?? []);
     setAvailability(availabilityData ?? []);
   }
-    async function updateMemberRole(member: TeamMember, role: TeamMember["role"]) {
+
+  async function updateMemberRole(member: TeamMember, role: TeamMember["role"]) {
     const { error } = await supabase.from("team_members").update({ role }).eq("id", member.id);
     if (error) {
       alert(error.message);
@@ -292,6 +285,7 @@ export default function Home() {
 
     await loadAdminData();
   }
+
   async function addAssignment() {
     if (!newAssignmentClientName || !newAssignmentMemberId) return;
 
@@ -426,7 +420,6 @@ export default function Home() {
     await loadAdminData();
   }
 
-
   function getMay2026WorkDays() {
     const days: string[] = [];
 
@@ -509,12 +502,14 @@ export default function Home() {
       today.getDate()
     ).padStart(2, "0")}`;
   }
+
   const sharedRoutineRoles: TeamMember["role"][] = ["writer", "designer", "editor"];
 
   function isSharedRoutineItem(item: RoutineItem) {
     return currentMember ? item.team_member_id !== currentMember.id : false;
   }
-    function buildReassignmentNote(originalItem: RoutineItem) {
+
+  function buildReassignmentNote(originalItem: RoutineItem) {
     return `Reassigned from ${originalItem.person_name} (orig:${originalItem.id})`;
   }
 
@@ -525,8 +520,7 @@ export default function Home() {
     return match?.[1] ?? null;
   }
 
-
-    async function loadMemberRoutineItems(member: TeamMember) {
+  async function loadMemberRoutineItems(member: TeamMember) {
     const eligibleForSharedQueue = sharedRoutineRoles.includes(member.role);
 
     if (!eligibleForSharedQueue) {
@@ -568,8 +562,10 @@ export default function Home() {
 
     const otherMemberIds = sameRoleMemberIds.filter((id) => id !== member.id);
 
-    let absentEntries: Pick<MemberAvailability, "team_member_id" | "unavailable_date" | "capacity_override">[] =
-      [];
+    let absentEntries: Pick<
+      MemberAvailability,
+      "team_member_id" | "unavailable_date" | "capacity_override"
+    >[] = [];
 
     if (otherMemberIds.length > 0) {
       const { data: availabilityData } = await supabase
@@ -608,8 +604,7 @@ export default function Home() {
     setMemberRoutineItems(visibleItems);
   }
 
-
-   function getCategoryCampaignFamily(categoryName: string) {
+  function getCategoryCampaignFamily(categoryName: string) {
     const value = categoryName.toLowerCase();
 
     if (value.includes("video") && value.includes("social media")) {
@@ -626,7 +621,6 @@ export default function Home() {
 
     return "other";
   }
-
 
   function categoryMatchesRoutine(categoryName: string, item: RoutineItem) {
     if (!categoryName) return true;
@@ -648,7 +642,7 @@ export default function Home() {
     return true;
   }
 
-     function handleRoutineItemChange(value: string) {
+  function handleRoutineItemChange(value: string) {
     setSelectedRoutineItemId(value);
     setSelectedRoutineLocked(Boolean(value));
 
@@ -670,9 +664,7 @@ export default function Home() {
     }
   }
 
-
-
-    function handleClientIdChange(value: string) {
+  function handleClientIdChange(value: string) {
     setClientId(value);
 
     if (selectedRoutineLocked) {
@@ -687,15 +679,13 @@ export default function Home() {
 
     const matchingRoutine = todayRoutineItems.find(
       (item) =>
-        item.client_name === selectedClient.name &&
-        categoryMatchesRoutine(category, item)
+        item.client_name === selectedClient.name && categoryMatchesRoutine(category, item)
     );
 
     setSelectedRoutineItemId(matchingRoutine?.id ?? "");
   }
 
-
-    function handleCategoryChange(value: string) {
+  function handleCategoryChange(value: string) {
     setCategory(value);
 
     if (selectedRoutineLocked) {
@@ -707,13 +697,11 @@ export default function Home() {
 
     const matchingRoutine = todayRoutineItems.find(
       (item) =>
-        item.client_name === selectedClient.name &&
-        categoryMatchesRoutine(value, item)
+        item.client_name === selectedClient.name && categoryMatchesRoutine(value, item)
     );
 
     setSelectedRoutineItemId(matchingRoutine?.id ?? "");
   }
-
 
   async function generateMay2026RoutinePlan() {
     const confirmed = confirm(
@@ -747,7 +735,7 @@ export default function Home() {
       usage.set(`${memberId}-${dateKey}`, used(memberId, dateKey) + count);
     }
 
-        function addRoutine(
+    function addRoutine(
       member: TeamMember,
       dateKey: string,
       clientName: string,
@@ -777,7 +765,20 @@ export default function Home() {
       addUsage(member.id, dateKey, count);
     }
 
-         function allocateOneOnDates(
+    function getWeekDates(weekNumber: number) {
+      return workDays.filter((dateKey) => getWeekNumber(dateKey) === weekNumber);
+    }
+
+    function getSocialWeeklyMinimum(clientName: string) {
+      const value = clientName.trim().toLowerCase();
+      if (value === "dormakaba global" || value === "dormakaba healthcare") {
+        return 3;
+      }
+      return 2;
+    }
+
+    // Allocate exactly 1 unit on the first available date from candidateDates
+    function allocateOneOnDates(
       member: TeamMember,
       clientName: string,
       campaignType: string,
@@ -785,29 +786,19 @@ export default function Home() {
       candidateDates: string[],
       notes?: string,
       podOverride?: string
-    ) {
+    ): boolean {
       for (const dateKey of candidateDates) {
         const capacityLeft = getCapacity(member, dateKey) - used(member.id, dateKey);
         if (capacityLeft <= 0) continue;
 
-        addRoutine(
-          member,
-          dateKey,
-          clientName,
-          campaignType,
-          outputType,
-          1,
-          notes,
-          podOverride
-        );
+        addRoutine(member, dateKey, clientName, campaignType, outputType, 1, notes, podOverride);
         return true;
       }
-
       return false;
     }
 
-
-        function distributeBalancedAcrossMembers(
+    // Distribute total units across members round-robin on candidateDates, returns actual allocated count
+    function distributeBalancedAcrossMembers(
       memberList: TeamMember[],
       clientName: string,
       campaignType: string,
@@ -816,7 +807,7 @@ export default function Home() {
       candidateDates: string[],
       notes?: string,
       podOverride?: string
-    ) {
+    ): number {
       if (memberList.length === 0 || total <= 0) return 0;
 
       let remaining = total;
@@ -848,189 +839,47 @@ export default function Home() {
       return total - remaining;
     }
 
-
-        function distributeBalanced(
-      memberList: TeamMember[],
-      clientName: string,
-      campaignType: string,
-      outputType: string,
-      total: number,
-      weekOneOnly = false,
-      notes?: string,
-      podOverride?: string
-    ) {
-      const candidateDates = weekOneOnly
-        ? workDays.filter((dateKey) => getWeekNumber(dateKey) === 1)
-        : workDays;
-
-      return distributeBalancedAcrossMembers(
-        memberList,
-        clientName,
-        campaignType,
-        outputType,
-        total,
-        candidateDates,
-        notes,
-        podOverride
-      );
-    }
-
-
-        function distributeBalancedWeeklyMinimum(
-      memberList: TeamMember[],
-      clientName: string,
-      campaignType: string,
-      outputType: string,
-      total: number,
-      weeklyMinimum: number,
-      notes?: string,
-      podOverride?: string
-    ) {
-      if (memberList.length === 0 || total <= 0) return;
-
-      let remaining = total;
-
-      for (let week = 1; week <= 5; week++) {
-        if (remaining <= 0) break;
-
-        const weekDates = getWeekDates(week);
-        if (weekDates.length === 0) continue;
-
-        const weekTarget = Math.min(weeklyMinimum, remaining);
-        const allocated = distributeBalancedAcrossMembers(
-          memberList,
-          clientName,
-          campaignType,
-          outputType,
-          weekTarget,
-          weekDates,
-          notes,
-          podOverride
-        );
-
-        remaining -= allocated;
-      }
-
-      if (remaining > 0) {
-        distributeBalancedAcrossMembers(
-          memberList,
-          clientName,
-          campaignType,
-          outputType,
-          remaining,
-          workDays,
-          notes,
-          podOverride
-        );
-      }
-    }
-
-
-        function distributeShootVideoBalancedWeeklyMinimum(
-      productionMember: TeamMember,
-      editorList: TeamMember[],
-      clientName: string,
-      campaignType: string,
-      total: number,
-      weeklyMinimum: number,
-      podOverride?: string
-    ) {
-      if (editorList.length === 0 || total <= 0) return;
-
-      let remaining = total;
-
-      for (let week = 1; week <= 5; week++) {
-        if (remaining <= 0) break;
-
-        const weekDates = getWeekDates(week);
-        if (weekDates.length === 0) continue;
-
-        const weekTarget = Math.min(weeklyMinimum, remaining);
-
-        const shootAllocations = allocateAndCaptureOnDates(
-          productionMember,
-          clientName,
-          campaignType,
-          "shoot",
-          weekTarget,
-          weekDates
-        );
-
-        const allocatedShootCount = shootAllocations.reduce(
-          (sum, allocation) => sum + allocation.count,
-          0
-        );
-
-        if (allocatedShootCount > 0) {
-          const allowedEditorDates = weekDates.filter((dateKey) =>
-            shootAllocations.some((allocation) => allocation.dateKey <= dateKey)
-          );
-
-          distributeBalancedAcrossMembers(
-            editorList,
-            clientName,
-            campaignType,
-            "video",
-            allocatedShootCount,
-            allowedEditorDates,
-            "Requires production first",
-            podOverride
-          );
-
-          remaining -= allocatedShootCount;
-        }
-      }
-
-      if (remaining > 0) {
-        const shootAllocations = allocateAndCaptureOnDates(
-          productionMember,
-          clientName,
-          campaignType,
-          "shoot",
-          remaining,
-          workDays
-        );
-
-        const allocatedShootCount = shootAllocations.reduce(
-          (sum, allocation) => sum + allocation.count,
-          0
-        );
-
-        if (allocatedShootCount > 0) {
-          const allowedEditorDates = workDays.filter((dateKey) =>
-            shootAllocations.some((allocation) => allocation.dateKey <= dateKey)
-          );
-
-          distributeBalancedAcrossMembers(
-            editorList,
-            clientName,
-            campaignType,
-            "video",
-            allocatedShootCount,
-            allowedEditorDates,
-            "Requires production first",
-            podOverride
-          );
-        }
-      }
-    }
-
-
-
-        function distribute(
+    // Allocate on dates and capture which dates/counts were used (for shoot→editor dependency)
+    function allocateAndCaptureOnDates(
       member: TeamMember,
       clientName: string,
       campaignType: string,
       outputType: string,
       total: number,
-      weekOneOnly = false,
+      candidateDates: string[],
+      notes?: string
+    ): { dateKey: string; count: number }[] {
+      let remaining = total;
+      const allocations: { dateKey: string; count: number }[] = [];
+
+      for (const dateKey of candidateDates) {
+        if (remaining <= 0) break;
+
+        const capacityLeft = getCapacity(member, dateKey) - used(member.id, dateKey);
+        if (capacityLeft <= 0) continue;
+
+        const count = Math.min(capacityLeft, remaining);
+        addRoutine(member, dateKey, clientName, campaignType, outputType, count, notes);
+        allocations.push({ dateKey, count });
+        remaining -= count;
+      }
+
+      return allocations;
+    }
+
+    // Single-member distribute across all workDays
+    function distribute(
+      member: TeamMember,
+      clientName: string,
+      campaignType: string,
+      outputType: string,
+      total: number,
       notes?: string
     ) {
       let remaining = total;
 
       for (const dateKey of workDays) {
         if (remaining <= 0) break;
-        if (weekOneOnly && getWeekNumber(dateKey) !== 1) continue;
 
         const capacityLeft = getCapacity(member, dateKey) - used(member.id, dateKey);
         if (capacityLeft <= 0) continue;
@@ -1040,7 +889,8 @@ export default function Home() {
         remaining -= count;
       }
     }
-        function getCreativeTestingOutputType(role: TeamMember["role"]) {
+
+    function getCreativeTestingOutputType(role: TeamMember["role"]) {
       if (role === "writer") return "creative testing copy";
       if (role === "designer") return "creative testing creative";
       if (role === "editor") return "creative testing video";
@@ -1068,448 +918,245 @@ export default function Home() {
       }
     }
 
-
-    function allocateOnDates(
-      member: TeamMember,
-      clientName: string,
-      campaignType: string,
-      outputType: string,
-      total: number,
-      candidateDates: string[],
-      notes?: string
-    ) {
-      let remaining = total;
-
-      for (const dateKey of candidateDates) {
-        if (remaining <= 0) break;
-
-        const capacityLeft = getCapacity(member, dateKey) - used(member.id, dateKey);
-        if (capacityLeft <= 0) continue;
-
-        const count = Math.min(capacityLeft, remaining);
-        addRoutine(member, dateKey, clientName, campaignType, outputType, count, notes);
-        remaining -= count;
-      }
-
-      return total - remaining;
-    }
-
-    function allocateAndCaptureOnDates(
-      member: TeamMember,
-      clientName: string,
-      campaignType: string,
-      outputType: string,
-      total: number,
-      candidateDates: string[],
-      notes?: string
-    ) {
-      let remaining = total;
-      const allocations: { dateKey: string; count: number }[] = [];
-
-      for (const dateKey of candidateDates) {
-        if (remaining <= 0) break;
-
-        const capacityLeft = getCapacity(member, dateKey) - used(member.id, dateKey);
-        if (capacityLeft <= 0) continue;
-
-        const count = Math.min(capacityLeft, remaining);
-        addRoutine(member, dateKey, clientName, campaignType, outputType, count, notes);
-        allocations.push({ dateKey, count });
-        remaining -= count;
-      }
-
-      return allocations;
-    }
-
-    function getSocialWeeklyMinimum(clientName: string) {
-      const value = clientName.trim().toLowerCase();
-
-      if (
-        value === "dormakaba global".toLowerCase() ||
-        value === "dormakaba healthcare".toLowerCase()
-      ) {
-        return 3;
-      }
-
-      return 2;
-    }
-
-    function getWeekDates(weekNumber: number) {
-      return workDays.filter((dateKey) => getWeekNumber(dateKey) === weekNumber);
-    }
-
-    function distributeWeeklyMinimum(
-      member: TeamMember,
-      clientName: string,
-      campaignType: string,
-      outputType: string,
-      total: number,
-      weeklyMinimum: number,
-      notes?: string
-    ) {
-      let remaining = total;
-
-      for (let week = 1; week <= 5; week++) {
-        if (remaining <= 0) break;
-
-        const weekDates = getWeekDates(week);
-        if (weekDates.length === 0) continue;
-
-        const weekTarget = Math.min(weeklyMinimum, remaining);
-        const allocated = allocateOnDates(
-          member,
-          clientName,
-          campaignType,
-          outputType,
-          weekTarget,
-          weekDates,
-          notes
-        );
-
-        remaining -= allocated;
-      }
-
-      if (remaining > 0) {
-        allocateOnDates(
-          member,
-          clientName,
-          campaignType,
-          outputType,
-          remaining,
-          workDays,
-          notes
-        );
-      }
-    }
-
-    function distributeShootVideoWeeklyMinimum(
-      productionMember: TeamMember,
-      editorMember: TeamMember,
-      clientName: string,
-      campaignType: string,
-      total: number,
-      weeklyMinimum: number
-    ) {
-      let remaining = total;
-
-      for (let week = 1; week <= 5; week++) {
-        if (remaining <= 0) break;
-
-        const weekDates = getWeekDates(week);
-        if (weekDates.length === 0) continue;
-
-        const weekTarget = Math.min(weeklyMinimum, remaining);
-
-        const shootAllocations = allocateAndCaptureOnDates(
-          productionMember,
-          clientName,
-          campaignType,
-          "shoot",
-          weekTarget,
-          weekDates
-        );
-
-        const allocatedShootCount = shootAllocations.reduce(
-          (sum, allocation) => sum + allocation.count,
-          0
-        );
-
-        if (allocatedShootCount > 0) {
-          const allowedEditorDates = weekDates.filter((dateKey) =>
-            shootAllocations.some((allocation) => allocation.dateKey <= dateKey)
-          );
-
-          allocateOnDates(
-            editorMember,
-            clientName,
-            campaignType,
-            "video",
-            allocatedShootCount,
-            allowedEditorDates,
-            "Requires production first"
-          );
-
-          remaining -= allocatedShootCount;
-        }
-      }
-
-      if (remaining > 0) {
-        const shootAllocations = allocateAndCaptureOnDates(
-          productionMember,
-          clientName,
-          campaignType,
-          "shoot",
-          remaining,
-          workDays
-        );
-
-        const allocatedShootCount = shootAllocations.reduce(
-          (sum, allocation) => sum + allocation.count,
-          0
-        );
-
-        if (allocatedShootCount > 0) {
-          const allowedEditorDates = workDays.filter((dateKey) =>
-            shootAllocations.some((allocation) => allocation.dateKey <= dateKey)
-          );
-
-          allocateOnDates(
-            editorMember,
-            clientName,
-            campaignType,
-            "video",
-            allocatedShootCount,
-            allowedEditorDates,
-            "Requires production first"
-          );
-        }
-      }
-    }
-
-        function distributeAndCaptureDates(
-      member: TeamMember,
-      clientName: string,
-      campaignType: string,
-      outputType: string,
-      total: number,
-      weekOneOnly = false,
-      notes?: string
-    ) {
-      let remaining = total;
-      const allocations: { dateKey: string; count: number }[] = [];
-
-      for (const dateKey of workDays) {
-        if (remaining <= 0) break;
-        if (weekOneOnly && getWeekNumber(dateKey) !== 1) continue;
-        if (campaignType === "social_media" && getWeekNumber(dateKey) === 1) continue;
-
-        const capacityLeft = getCapacity(member, dateKey) - used(member.id, dateKey);
-        if (capacityLeft <= 0) continue;
-
-        const count = Math.min(capacityLeft, remaining);
-        addRoutine(member, dateKey, clientName, campaignType, outputType, count, notes);
-        allocations.push({ dateKey, count });
-        remaining -= count;
-      }
-
-      return allocations;
-    }
-
-    function distributeFromAllowedDates(
-      member: TeamMember,
-      clientName: string,
-      campaignType: string,
-      outputType: string,
-      total: number,
-      allowedDates: string[],
-      notes?: string
-    ) {
-      let remaining = total;
-
-      for (const dateKey of allowedDates) {
-        if (remaining <= 0) break;
-
-        const capacityLeft = getCapacity(member, dateKey) - used(member.id, dateKey);
-        if (capacityLeft <= 0) continue;
-
-        const count = Math.min(capacityLeft, remaining);
-        addRoutine(member, dateKey, clientName, campaignType, outputType, count, notes);
-        remaining -= count;
-      }
-    }
-
-
+    // ─── STEP 1: Carry-forward spread across ALL weeks (not just week 1) ───
+    // This prevents carry-forward from monopolising Week 1 capacity.
     for (const member of activeMembers) {
       if (member.role === "designer") {
-        distribute(
-          member,
-          "Carry-forward",
-          "carry_forward",
-          "creative",
-          6,
-          true,
-          "Previous month pending workload"
-        );
+        distribute(member, "Carry-forward", "carry_forward", "creative", 6, "Previous month pending workload");
       }
-
       if (member.role === "editor") {
-        distribute(
-          member,
-          "Carry-forward",
-          "carry_forward",
-          "video",
-          6,
-          true,
-          "Previous month pending workload"
-        );
+        distribute(member, "Carry-forward", "carry_forward", "video", 6, "Previous month pending workload");
       }
-
       if (member.role === "production") {
-        distribute(
-          member,
-          "Carry-forward",
-          "carry_forward",
-          "shoot",
-          6,
-          true,
-          "Previous month pending workload"
-        );
+        distribute(member, "Carry-forward", "carry_forward", "shoot", 6, "Previous month pending workload");
       }
     }
 
-         for (const rule of campaignRules) {
-      const designers = activeMembers.filter(
-        (member) =>
-          member.role === "designer" &&
-          assignments.some(
-            (assignment) =>
-              assignment.team_member_id === member.id &&
-              assignment.client_name === rule.client_name
-          )
-      );
+    // ─── STEP 2: Build per-rule remaining work counters ───
+    type RuleRemaining = {
+      designRemaining: number;
+      writerRemaining: number;
+      aiVideoRemaining: number;
+      shootVideoRemaining: number;
+      outputType: string;
+    };
 
-      const writers = activeMembers.filter(
-        (member) =>
-          member.role === "writer" &&
-          assignments.some(
-            (assignment) =>
-              assignment.team_member_id === member.id &&
-              assignment.client_name === rule.client_name
-          )
-      );
+    const ruleRemaining = new Map<string, RuleRemaining>();
 
-      const editors = activeMembers.filter(
-        (member) =>
-          member.role === "editor" &&
-          assignments.some(
-            (assignment) =>
-              assignment.team_member_id === member.id &&
-              assignment.client_name === rule.client_name
-          )
-      );
-
-      const production = activeMembers.find((member) => member.role === "production");
-
+    for (const rule of campaignRules) {
       const designTotal = rule.static_count + rule.canva_count;
       const aiVideoCount = rule.ai_video_count ?? 0;
-      const shootVideoCount =
-        rule.shoot_video_count ?? Math.max(0, rule.video_count - aiVideoCount);
-      const totalVideoCount = aiVideoCount + shootVideoCount;
-      const writerTotal = rule.static_count + rule.canva_count + totalVideoCount;
+      const shootVideoCount = rule.shoot_video_count ?? Math.max(0, rule.video_count - aiVideoCount);
+      const writerTotal = designTotal + aiVideoCount + shootVideoCount;
 
-      if (rule.campaign_type === "social_media") {
-        const weeklyMinimum = getSocialWeeklyMinimum(rule.client_name);
+      ruleRemaining.set(rule.id, {
+        designRemaining: designTotal,
+        writerRemaining: writerTotal,
+        aiVideoRemaining: aiVideoCount,
+        shootVideoRemaining: shootVideoCount,
+        outputType: rule.canva_count > 0 ? "canva" : "creative",
+      });
+    }
 
-        if (designers.length > 0 && designTotal > 0) {
-          distributeBalancedWeeklyMinimum(
+    // Helper: get assigned members for a rule by role
+    function getAssignedMembers(rule: CampaignRule, role: TeamMember["role"]) {
+      return activeMembers.filter(
+        (m) =>
+          m.role === role &&
+          assignments.some(
+            (a) => a.team_member_id === m.id && a.client_name === rule.client_name
+          )
+      );
+    }
+
+    // ─── STEP 3: PASS 1 — Week-by-week, give every client their weekly minimum first ───
+    // This ensures social media clients always get Week 1 slots before overflow fills them.
+    for (let week = 1; week <= 5; week++) {
+      const weekDates = getWeekDates(week);
+      if (weekDates.length === 0) continue;
+
+      for (const rule of campaignRules) {
+        const rem = ruleRemaining.get(rule.id);
+        if (!rem) continue;
+
+        const designers = getAssignedMembers(rule, "designer");
+        const writers = getAssignedMembers(rule, "writer");
+        const editors = getAssignedMembers(rule, "editor");
+        const production = activeMembers.find((m) => m.role === "production");
+
+        // Weekly minimum per client:
+        // - social_media: getSocialWeeklyMinimum (2 or 3)
+        // - performance: spread total evenly across 5 weeks
+        const totalDeliverables =
+          (rule.static_count + rule.canva_count) +
+          (rule.ai_video_count ?? 0) +
+          (rule.shoot_video_count ?? Math.max(0, rule.video_count - (rule.ai_video_count ?? 0)));
+
+        const weeklyMin =
+          rule.campaign_type === "social_media"
+            ? getSocialWeeklyMinimum(rule.client_name)
+            : Math.ceil(totalDeliverables / 5);
+
+        // Designers
+        if (designers.length > 0 && rem.designRemaining > 0) {
+          const toAllocate = Math.min(weeklyMin, rem.designRemaining);
+          const allocated = distributeBalancedAcrossMembers(
             designers,
             rule.client_name,
             rule.campaign_type,
-            rule.canva_count > 0 ? "canva" : "creative",
-            designTotal,
-            weeklyMinimum,
+            rem.outputType,
+            toAllocate,
+            weekDates,
             undefined,
             rule.pod
           );
+          rem.designRemaining -= allocated;
         }
 
-        if (writers.length > 0 && writerTotal > 0) {
-          distributeBalancedWeeklyMinimum(
+        // Writers
+        if (writers.length > 0 && rem.writerRemaining > 0) {
+          const toAllocate = Math.min(weeklyMin, rem.writerRemaining);
+          const allocated = distributeBalancedAcrossMembers(
             writers,
             rule.client_name,
             rule.campaign_type,
             "copy/script",
-            writerTotal,
-            weeklyMinimum,
+            toAllocate,
+            weekDates,
             undefined,
             rule.pod
           );
+          rem.writerRemaining -= allocated;
         }
 
-        if (editors.length > 0 && aiVideoCount > 0) {
-          distributeBalancedWeeklyMinimum(
+        // AI video editors
+        if (editors.length > 0 && rem.aiVideoRemaining > 0) {
+          const toAllocate = Math.min(weeklyMin, rem.aiVideoRemaining);
+          const allocated = distributeBalancedAcrossMembers(
             editors,
             rule.client_name,
             rule.campaign_type,
             "video",
-            aiVideoCount,
-            weeklyMinimum,
+            toAllocate,
+            weekDates,
             undefined,
             rule.pod
           );
+          rem.aiVideoRemaining -= allocated;
         }
 
-        if (production && editors.length > 0 && shootVideoCount > 0) {
-          distributeShootVideoBalancedWeeklyMinimum(
+        // Shoot video: production shoots first, then editors edit on same/later dates
+        if (production && editors.length > 0 && rem.shootVideoRemaining > 0) {
+          const toAllocate = Math.min(weeklyMin, rem.shootVideoRemaining);
+          const shootAllocations = allocateAndCaptureOnDates(
             production,
-            editors,
             rule.client_name,
             rule.campaign_type,
-            shootVideoCount,
-            weeklyMinimum,
-            rule.pod
+            "shoot",
+            toAllocate,
+            weekDates
           );
+          const shootCount = shootAllocations.reduce((s, a) => s + a.count, 0);
+          if (shootCount > 0) {
+            const allowedEditorDates = weekDates.filter((d) =>
+              shootAllocations.some((a) => a.dateKey <= d)
+            );
+            distributeBalancedAcrossMembers(
+              editors,
+              rule.client_name,
+              rule.campaign_type,
+              "video",
+              shootCount,
+              allowedEditorDates,
+              "Requires production first",
+              rule.pod
+            );
+            rem.shootVideoRemaining -= shootCount;
+          }
         }
 
-        continue;
+        ruleRemaining.set(rule.id, rem);
       }
+    }
 
-      if (designers.length > 0 && designTotal > 0) {
-        distributeBalanced(
+    // ─── STEP 4: PASS 2 — Fill any remaining counts that didn't fit in weekly minimums ───
+    for (const rule of campaignRules) {
+      const rem = ruleRemaining.get(rule.id);
+      if (!rem) continue;
+
+      const designers = getAssignedMembers(rule, "designer");
+      const writers = getAssignedMembers(rule, "writer");
+      const editors = getAssignedMembers(rule, "editor");
+      const production = activeMembers.find((m) => m.role === "production");
+
+      if (designers.length > 0 && rem.designRemaining > 0) {
+        distributeBalancedAcrossMembers(
           designers,
           rule.client_name,
           rule.campaign_type,
-          rule.canva_count > 0 ? "canva" : "creative",
-          designTotal,
-          false,
+          rem.outputType,
+          rem.designRemaining,
+          workDays,
           undefined,
           rule.pod
         );
       }
 
-      if (writers.length > 0 && writerTotal > 0) {
-        distributeBalanced(
+      if (writers.length > 0 && rem.writerRemaining > 0) {
+        distributeBalancedAcrossMembers(
           writers,
           rule.client_name,
           rule.campaign_type,
           "copy/script",
-          writerTotal,
-          false,
+          rem.writerRemaining,
+          workDays,
           undefined,
           rule.pod
         );
       }
 
-      if (editors.length > 0 && aiVideoCount > 0) {
-        distributeBalanced(
+      if (editors.length > 0 && rem.aiVideoRemaining > 0) {
+        distributeBalancedAcrossMembers(
           editors,
           rule.client_name,
           rule.campaign_type,
           "video",
-          aiVideoCount,
-          false,
+          rem.aiVideoRemaining,
+          workDays,
           undefined,
           rule.pod
         );
       }
 
-      if (production && editors.length > 0 && shootVideoCount > 0) {
-        distributeShootVideoBalancedWeeklyMinimum(
+      if (production && editors.length > 0 && rem.shootVideoRemaining > 0) {
+        const shootAllocations = allocateAndCaptureOnDates(
           production,
-          editors,
           rule.client_name,
           rule.campaign_type,
-          shootVideoCount,
-          shootVideoCount,
-          rule.pod
+          "shoot",
+          rem.shootVideoRemaining,
+          workDays
         );
+        const shootCount = shootAllocations.reduce((s, a) => s + a.count, 0);
+        if (shootCount > 0) {
+          const allowedEditorDates = workDays.filter((d) =>
+            shootAllocations.some((a) => a.dateKey <= d)
+          );
+          distributeBalancedAcrossMembers(
+            editors,
+            rule.client_name,
+            rule.campaign_type,
+            "video",
+            shootCount,
+            allowedEditorDates,
+            "Requires production first",
+            rule.pod
+          );
+        }
       }
     }
 
-
-
-
-
+    // ─── STEP 5: Fill remaining capacity with Creative Testing ───
     addCreativeTestingFillers();
 
     if (generated.length === 0) {
@@ -1527,7 +1174,6 @@ export default function Home() {
     alert(`Generated ${generated.length} routine items for May 2026.`);
     await loadRoutineBoardData();
     await loadAdminData();
-
   }
 
   async function addClient() {
@@ -1583,7 +1229,6 @@ export default function Home() {
     setNewMemberEmail("");
     await loadRoutineBoardData();
     await loadAdminData();
-
   }
 
   async function deactivateMember(member: TeamMember) {
@@ -1706,70 +1351,69 @@ export default function Home() {
     await loadAdminData();
   }
 
- async function updateLog(
-  logId: string,
-  patch: {
-    started_at: string;
-    ended_at: string;
-    task_text: string;
-    client_id: string;
-    category: string;
-    output_text: string;
+  async function updateLog(
+    logId: string,
+    patch: {
+      started_at: string;
+      ended_at: string;
+      task_text: string;
+      client_id: string;
+      category: string;
+      output_text: string;
+    }
+  ) {
+    const startedAt = new Date(patch.started_at);
+    const endedAt = new Date(patch.ended_at);
+
+    if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) {
+      alert("Please enter valid start and end date/time values.");
+      return;
+    }
+
+    if (endedAt <= startedAt) {
+      alert("End time must be later than start time.");
+      return;
+    }
+
+    const matchedClient = clients.find((client) => client.id === patch.client_id);
+    if (!matchedClient) {
+      alert("Please select a client.");
+      return;
+    }
+
+    if (!patch.category) {
+      alert("Please select a category.");
+      return;
+    }
+
+    const totalSeconds = Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000);
+
+    const { error } = await supabase
+      .from("time_logs")
+      .update({
+        started_at: startedAt.toISOString(),
+        ended_at: endedAt.toISOString(),
+        total_seconds: totalSeconds,
+        task_text: patch.task_text.trim(),
+        client_id: matchedClient.id,
+        client_name: matchedClient.name,
+        category: patch.category,
+        output_text: patch.output_text.trim(),
+      })
+      .eq("id", logId)
+      .eq("user_id", user.id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    await loadLogs();
+
+    if (isAdmin) {
+      await loadAdminData();
+    }
   }
-) {
-  const startedAt = new Date(patch.started_at);
-  const endedAt = new Date(patch.ended_at);
-
-  if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) {
-    alert("Please enter valid start and end date/time values.");
-    return;
-  }
-
-  if (endedAt <= startedAt) {
-    alert("End time must be later than start time.");
-    return;
-  }
-
-  const matchedClient = clients.find((client) => client.id === patch.client_id);
-  if (!matchedClient) {
-    alert("Please select a client.");
-    return;
-  }
-
-  if (!patch.category) {
-    alert("Please select a category.");
-    return;
-  }
-
-  const totalSeconds = Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000);
-
-  const { error } = await supabase
-    .from("time_logs")
-    .update({
-      started_at: startedAt.toISOString(),
-      ended_at: endedAt.toISOString(),
-      total_seconds: totalSeconds,
-      task_text: patch.task_text.trim(),
-      client_id: matchedClient.id,
-      client_name: matchedClient.name,
-      category: patch.category,
-      output_text: patch.output_text.trim(),
-    })
-    .eq("id", logId)
-    .eq("user_id", user.id);
-
-  if (error) {
-    alert(error.message);
-    return;
-  }
-
-  await loadLogs();
-
-  if (isAdmin) {
-    await loadAdminData();
-  }
-}
-
 
   async function deleteOwnLog(logId: string) {
     const confirmed = confirm("Delete this log permanently?");
@@ -1903,7 +1547,7 @@ export default function Home() {
     await loadRoutineBoardData();
   }
 
-      async function deleteLog(logId: string) {
+  async function deleteLog(logId: string) {
     const confirmed = confirm("Delete this log permanently?");
     if (!confirmed) return;
 
@@ -1953,7 +1597,10 @@ export default function Home() {
       }
     }
 
-    const { error: deleteLogError } = await supabase.from("time_logs").delete().eq("id", logId);
+    const { error: deleteLogError } = await supabase
+      .from("time_logs")
+      .delete()
+      .eq("id", logId);
 
     if (deleteLogError) {
       alert(deleteLogError.message);
@@ -2016,7 +1663,7 @@ export default function Home() {
       }
     }
 
-         if (currentMember) {
+    if (currentMember) {
       await loadMemberRoutineItems(currentMember);
     }
 
@@ -2026,11 +1673,7 @@ export default function Home() {
     if (isAdmin) {
       await loadAdminData();
     }
-
-
   }
-
-
 
   async function signUp() {
     const { error } = await supabase.auth.signUp({ email, password });
@@ -2120,6 +1763,7 @@ export default function Home() {
 
     await loadAdminData();
   }
+
   async function loadRoutineBoardData() {
     const [{ data: routineData }, { data: rulesData }] = await Promise.all([
       supabase.from("routine_items").select("*").order("work_date").order("person_name"),
@@ -2192,7 +1836,7 @@ export default function Home() {
       usage.set(`${memberId}-${dateKey}`, used(memberId, dateKey) + count);
     }
 
-         function addRoutine(
+    function addRoutine(
       member: TeamMember,
       dateKey: string,
       clientName: string,
@@ -2221,9 +1865,6 @@ export default function Home() {
 
       addUsage(member.id, dateKey, count);
     }
-
-
-
 
     for (const workItem of remainingWork) {
       let remaining = workItem.planned_count;
@@ -2276,7 +1917,7 @@ export default function Home() {
     pendingRoutineItems[0]?.work_date ??
     "";
 
-    const todayRoutineItems = pendingRoutineItems.filter(
+  const todayRoutineItems = pendingRoutineItems.filter(
     (item) => item.work_date === nextRoutineDate
   );
 
@@ -2302,27 +1943,26 @@ export default function Home() {
 
   const sharedRoutineNotice =
     sharedTodayRoutineItems.length > 0
-      ? `${sharedTodayRoutineItems.length} absent-team task${sharedTodayRoutineItems.length > 1 ? "s are" : " is"} available for pickup.`
+      ? `${sharedTodayRoutineItems.length} absent-team task${
+          sharedTodayRoutineItems.length > 1 ? "s are" : " is"
+        } available for pickup.`
       : "";
-
 
   const selectedClientName = clients.find((item) => item.id === clientId)?.name ?? "";
 
-    const routineWarning =
+  const routineWarning =
     currentMember &&
     clientId &&
     todayRoutineItems.length > 0 &&
     selectedClientName &&
     !todayRoutineItems.some(
       (item) =>
-        item.client_name === selectedClientName &&
-        categoryMatchesRoutine(category, item)
+        item.client_name === selectedClientName && categoryMatchesRoutine(category, item)
     )
       ? `${selectedClientName} is not part of the routine currently being shown for this category. You can still continue as unplanned work.`
       : sharedRoutineNotice;
 
-
-    function startTimer() {
+  function startTimer() {
     const client = clients.find((item) => item.id === clientId);
     if (!client || !canStart) return;
 
@@ -2337,7 +1977,9 @@ export default function Home() {
       null;
 
     const sharedOwnerLabel =
-      currentMember && autoMatchedRoutine && autoMatchedRoutine.team_member_id !== currentMember.id
+      currentMember &&
+      autoMatchedRoutine &&
+      autoMatchedRoutine.team_member_id !== currentMember.id
         ? `Assigned to ${autoMatchedRoutine.person_name}`
         : null;
 
@@ -2350,7 +1992,9 @@ export default function Home() {
         category,
         routineItemId: autoMatchedRoutine?.id ?? null,
         routineLabel: autoMatchedRoutine
-          ? `${autoMatchedRoutine.client_name} · ${autoMatchedRoutine.campaign_type} · ${autoMatchedRoutine.output_type}${sharedOwnerLabel ? ` · ${sharedOwnerLabel}` : ""}`
+          ? `${autoMatchedRoutine.client_name} · ${autoMatchedRoutine.campaign_type} · ${autoMatchedRoutine.output_type}${
+              sharedOwnerLabel ? ` · ${sharedOwnerLabel}` : ""
+            }`
           : null,
         startedAt: new Date().toISOString(),
         elapsedBeforePause: 0,
@@ -2365,10 +2009,8 @@ export default function Home() {
     setClientId("");
     setCategory("");
     setSelectedRoutineItemId("");
-        setSelectedRoutineLocked(false);
-
+    setSelectedRoutineLocked(false);
   }
-
 
   function getElapsed(timer: ActiveTimer) {
     if (!timer.runningSince) return timer.elapsedBeforePause;
@@ -2409,7 +2051,7 @@ export default function Home() {
     setTimers((current) => current.filter((timer) => timer.id !== id));
   }
 
-      async function stopTimer(timer: ActiveTimer) {
+  async function stopTimer(timer: ActiveTimer) {
     if (!timer.outputText.trim()) {
       alert("Please paste or type the output before stopping.");
       return;
@@ -2478,12 +2120,9 @@ export default function Home() {
     if (isAdmin) {
       await loadAdminData();
     }
-
   }
 
-
-
-      if (!mounted || authLoading) {
+  if (!mounted || authLoading) {
     return null;
   }
 
@@ -2500,9 +2139,6 @@ export default function Home() {
     );
   }
 
-
-
-
   return (
     <main className="min-h-screen">
       <Header
@@ -2517,12 +2153,13 @@ export default function Home() {
           <div className="card mb-4 rounded-2xl p-4">
             <h3 className="font-semibold">Profile mapping missing</h3>
             <p className="mt-1 text-sm text-muted">
-              This login is not mapped to a team member profile yet. Routine suggestions will stay hidden until admin links your email in team members.
+              This login is not mapped to a team member profile yet. Routine suggestions will stay
+              hidden until admin links your email in team members.
             </p>
           </div>
         ) : null}
 
-                <TimerForm
+        <TimerForm
           taskText={taskText}
           clientId={clientId}
           category={category}
@@ -2540,6 +2177,7 @@ export default function Home() {
           onRoutineItemChange={handleRoutineItemChange}
           onStart={startTimer}
         />
+
         <section className="mt-4">
           <div className="card rounded-2xl p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2564,17 +2202,16 @@ export default function Home() {
             </div>
           </div>
         </section>
+
         {showRoutineBoard && (
-  <section className="mt-4">
-    <WeeklyRoutineTracker
-      items={routineItems}
-      campaignRules={campaignRules}
-      highlightedPersonName={currentMember?.name}
-    />
-  </section>
-)}
-
-
+          <section className="mt-4">
+            <WeeklyRoutineTracker
+              items={routineItems}
+              campaignRules={campaignRules}
+              highlightedPersonName={currentMember?.name}
+            />
+          </section>
+        )}
 
         <section className="mt-6">
           <div className="mb-3 flex flex-col gap-1">
@@ -2676,7 +2313,7 @@ export default function Home() {
             onRemoveAvailability={removeAvailability}
             onRebalanceRoutinePlan={rebalanceRoutinePlan}
             campaignRules={campaignRules}
-                        newCampaignClientName={newCampaignClientName}
+            newCampaignClientName={newCampaignClientName}
             newCampaignType={newCampaignType}
             newCampaignPod={newCampaignPod}
             newCampaignAccountManager={newCampaignAccountManager}
@@ -2708,7 +2345,6 @@ export default function Home() {
             onNewAssignmentMemberIdChange={setNewAssignmentMemberId}
             onAddAssignment={addAssignment}
             onDeactivateAssignment={deactivateAssignment}
-
           />
         )}
       </div>

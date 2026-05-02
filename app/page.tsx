@@ -100,6 +100,14 @@ export default function Home() {
 
   const canStart = Boolean(taskText.trim() && clientId && category);
 
+  function normalizeClientName(value: string) {
+    return value.trim().toLowerCase();
+  }
+
+  function clientNamesMatch(left: string, right: string) {
+    return normalizeClientName(left) === normalizeClientName(right);
+  }
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
@@ -209,6 +217,12 @@ export default function Home() {
   }
 
   async function loadAdminData() {
+    const { data: planData } = await supabase
+      .from("routine_plans")
+      .select("id")
+      .eq("month_start", "2026-05-01")
+      .maybeSingle();
+
     const [
       { data: logsData },
       { data: adminsData },
@@ -239,7 +253,14 @@ export default function Home() {
         .select("*")
         .eq("is_active", true)
         .order("member_name"),
-      supabase.from("routine_items").select("*").order("work_date").order("person_name"),
+      planData
+        ? supabase
+            .from("routine_items")
+            .select("*")
+            .eq("plan_id", planData.id)
+            .order("work_date")
+            .order("person_name")
+        : Promise.resolve({ data: [] }),
       supabase.from("holidays").select("*").order("holiday_date"),
       supabase.from("member_availability").select("*").order("unavailable_date"),
     ]);
@@ -294,7 +315,7 @@ export default function Home() {
 
     const alreadyExists = assignments.some(
       (item) =>
-        item.client_name === newAssignmentClientName &&
+        clientNamesMatch(item.client_name, newAssignmentClientName) &&
         item.team_member_id === member.id &&
         item.is_active
     );
@@ -431,11 +452,6 @@ export default function Home() {
 
       if (isSunday) continue;
 
-      if (isSaturday) {
-        const saturdayNumber = Math.ceil(day / 7);
-        if (saturdayNumber !== 1 && saturdayNumber !== 3) continue;
-      }
-
       const dateKey = `2026-05-${String(day).padStart(2, "0")}`;
 
       if (holidays.some((holiday) => holiday.holiday_date === dateKey)) {
@@ -452,8 +468,15 @@ export default function Home() {
     return Number(dateKey.slice(-2));
   }
 
-  function getWeekNumber(dateKey: string) {
-    return Math.ceil(getDayNumber(dateKey) / 7);
+  function getWeekNumber(dateKey: string, weekStartDate = "2026-05-01") {
+    const date = new Date(`${dateKey}T00:00:00`);
+    const startDate = new Date(`${weekStartDate}T00:00:00`);
+    const dayOffset = Math.max(
+      0,
+      Math.floor((date.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000))
+    );
+
+    return Math.floor(dayOffset / 7) + 1;
   }
 
   function isSaturday(dateKey: string) {
@@ -461,16 +484,62 @@ export default function Home() {
     return new Date(2026, 4, day).getDay() === 6;
   }
 
-  function getCapacity(member: TeamMember, dateKey: string) {
-    const availabilityEntry = availability.find(
+  function getSaturdayNumber(dateKey: string) {
+    return Math.ceil(getDayNumber(dateKey) / 7);
+  }
+
+  function isOddSaturday(dateKey: string) {
+    return isSaturday(dateKey) && getSaturdayNumber(dateKey) % 2 === 1;
+  }
+
+  function getRoleDailyLimit(role: TeamMember["role"]) {
+    if (role === "writer") return 6;
+    if (role === "designer") return 5;
+    if (role === "editor") return 3;
+    if (role === "production") return 4;
+    return 6;
+  }
+
+  function getPlannableCapacity(
+    member: TeamMember,
+    dateKey: string,
+    availabilityEntries = availability
+  ) {
+    const availabilityEntry = availabilityEntries.find(
       (item) => item.team_member_id === member.id && item.unavailable_date === dateKey
     );
+    const roleLimit = getRoleDailyLimit(member.role);
 
     if (availabilityEntry) {
-      return availabilityEntry.capacity_override ?? 0;
+      return Math.min(availabilityEntry.capacity_override ?? 0, roleLimit);
     }
 
-    return isSaturday(dateKey) ? member.saturday_capacity : member.weekday_capacity;
+    if (isOddSaturday(dateKey)) {
+      return Math.min(member.saturday_capacity, roleLimit);
+    }
+
+    return roleLimit;
+  }
+
+  function getStretchCapacity(
+    member: TeamMember,
+    dateKey: string,
+    availabilityEntries = availability
+  ) {
+    const availabilityEntry = availabilityEntries.find(
+      (item) => item.team_member_id === member.id && item.unavailable_date === dateKey
+    );
+    const stretchLimit = getRoleDailyLimit(member.role) + 1;
+
+    if (availabilityEntry) {
+      return Math.min(availabilityEntry.capacity_override ?? 0, stretchLimit);
+    }
+
+    if (isOddSaturday(dateKey)) {
+      return Math.min(member.saturday_capacity, stretchLimit);
+    }
+
+    return stretchLimit;
   }
 
   function loadSavedTimers(userEmail: string) {
@@ -704,8 +773,9 @@ export default function Home() {
   }
 
   async function generateMay2026RoutinePlan() {
+    const planStartDate = rebalanceFromDate || "2026-05-01";
     const confirmed = confirm(
-      "Generate May 2026 routine plan? This will replace existing May 2026 routine items."
+      `Generate May 2026 routine plan from ${planStartDate}? This will replace all existing pending May 2026 routine items.`
     );
     if (!confirmed) return;
 
@@ -720,9 +790,19 @@ export default function Home() {
       return;
     }
 
-    await supabase.from("routine_items").delete().eq("plan_id", plan.id);
+    const { error: deleteError } = await supabase
+      .from("routine_items")
+      .delete()
+      .gte("work_date", "2026-05-01")
+      .lte("work_date", "2026-05-31")
+      .eq("completed_count", 0);
 
-    const workDays = getMay2026WorkDays();
+    if (deleteError) {
+      alert(deleteError.message);
+      return;
+    }
+
+    const workDays = getMay2026WorkDays().filter((dateKey) => dateKey >= planStartDate);
     const usage = new Map<string, number>();
     const generated: Omit<RoutineItem, "id">[] = [];
     const activeMembers = members.filter((member) => member.is_active);
@@ -766,15 +846,27 @@ export default function Home() {
     }
 
     function getWeekDates(weekNumber: number) {
-      return workDays.filter((dateKey) => getWeekNumber(dateKey) === weekNumber);
+      return workDays.filter((dateKey) => getWeekNumber(dateKey, planStartDate) === weekNumber);
     }
 
-    function getSocialWeeklyMinimum(clientName: string) {
-      const value = clientName.trim().toLowerCase();
-      if (value === "dormakaba global" || value === "dormakaba healthcare") {
-        return 3;
-      }
-      return 2;
+    const deliveryWeekCount = 3;
+    const deliveryWorkDays = workDays.filter(
+      (dateKey) => getWeekNumber(dateKey, planStartDate) <= deliveryWeekCount
+    );
+    const fillerWorkDays = workDays.filter(
+      (dateKey) => getWeekNumber(dateKey, planStartDate) > deliveryWeekCount
+    );
+
+    function getLeastLoadedDate(member: TeamMember, candidateDates: string[]) {
+      return [...candidateDates]
+        .filter((dateKey) => used(member.id, dateKey) < getStretchCapacity(member, dateKey))
+        .sort((a, b) => {
+          const aOverload = used(member.id, a) - getPlannableCapacity(member, a);
+          const bOverload = used(member.id, b) - getPlannableCapacity(member, b);
+
+          if (aOverload !== bOverload) return aOverload - bOverload;
+          return a.localeCompare(b);
+        })[0];
     }
 
     // Allocate exactly 1 unit on the first available date from candidateDates
@@ -785,15 +877,35 @@ export default function Home() {
       outputType: string,
       candidateDates: string[],
       notes?: string,
-      podOverride?: string
+      podOverride?: string,
+      allowOverCapacity = false
     ): boolean {
       for (const dateKey of candidateDates) {
-        const capacityLeft = getCapacity(member, dateKey) - used(member.id, dateKey);
+        const capacityLeft = getPlannableCapacity(member, dateKey) - used(member.id, dateKey);
         if (capacityLeft <= 0) continue;
 
         addRoutine(member, dateKey, clientName, campaignType, outputType, 1, notes, podOverride);
         return true;
       }
+
+      if (allowOverCapacity) {
+        const fallbackDate = getLeastLoadedDate(member, candidateDates);
+
+        if (fallbackDate) {
+          addRoutine(
+            member,
+            fallbackDate,
+            clientName,
+            campaignType,
+            outputType,
+            1,
+            notes ? `${notes} · over capacity` : "Over capacity to meet deliverable",
+            podOverride
+          );
+          return true;
+        }
+      }
+
       return false;
     }
 
@@ -806,7 +918,8 @@ export default function Home() {
       total: number,
       candidateDates: string[],
       notes?: string,
-      podOverride?: string
+      podOverride?: string,
+      allowOverCapacity = false
     ): number {
       if (memberList.length === 0 || total <= 0) return 0;
 
@@ -823,7 +936,8 @@ export default function Home() {
           outputType,
           candidateDates,
           notes,
-          podOverride
+          podOverride,
+          allowOverCapacity
         );
 
         if (allocated) {
@@ -847,7 +961,8 @@ export default function Home() {
       outputType: string,
       total: number,
       candidateDates: string[],
-      notes?: string
+      notes?: string,
+      allowOverCapacity = false
     ): { dateKey: string; count: number }[] {
       let remaining = total;
       const allocations: { dateKey: string; count: number }[] = [];
@@ -855,13 +970,30 @@ export default function Home() {
       for (const dateKey of candidateDates) {
         if (remaining <= 0) break;
 
-        const capacityLeft = getCapacity(member, dateKey) - used(member.id, dateKey);
+        const capacityLeft = getPlannableCapacity(member, dateKey) - used(member.id, dateKey);
         if (capacityLeft <= 0) continue;
 
         const count = Math.min(capacityLeft, remaining);
         addRoutine(member, dateKey, clientName, campaignType, outputType, count, notes);
         allocations.push({ dateKey, count });
         remaining -= count;
+      }
+
+      while (allowOverCapacity && remaining > 0) {
+        const fallbackDate = getLeastLoadedDate(member, candidateDates);
+        if (!fallbackDate) break;
+
+        addRoutine(
+          member,
+          fallbackDate,
+          clientName,
+          campaignType,
+          outputType,
+          1,
+          notes ? `${notes} · over capacity` : "Over capacity to meet deliverable"
+        );
+        allocations.push({ dateKey: fallbackDate, count: 1 });
+        remaining -= 1;
       }
 
       return allocations;
@@ -874,19 +1006,37 @@ export default function Home() {
       campaignType: string,
       outputType: string,
       total: number,
-      notes?: string
+      notes?: string,
+      targetDates = workDays,
+      allowOverCapacity = false
     ) {
       let remaining = total;
 
-      for (const dateKey of workDays) {
+      for (const dateKey of targetDates) {
         if (remaining <= 0) break;
 
-        const capacityLeft = getCapacity(member, dateKey) - used(member.id, dateKey);
+        const capacityLeft = getPlannableCapacity(member, dateKey) - used(member.id, dateKey);
         if (capacityLeft <= 0) continue;
 
         const count = Math.min(capacityLeft, remaining);
         addRoutine(member, dateKey, clientName, campaignType, outputType, count, notes);
         remaining -= count;
+      }
+
+      while (allowOverCapacity && remaining > 0) {
+        const fallbackDate = getLeastLoadedDate(member, targetDates);
+        if (!fallbackDate) break;
+
+        addRoutine(
+          member,
+          fallbackDate,
+          clientName,
+          campaignType,
+          outputType,
+          1,
+          notes ? `${notes} · over capacity` : "Over capacity to meet deliverable"
+        );
+        remaining -= 1;
       }
     }
 
@@ -901,8 +1051,8 @@ export default function Home() {
       for (const member of activeMembers) {
         if (!["writer", "designer", "editor"].includes(member.role)) continue;
 
-        for (const dateKey of workDays) {
-          const capacityLeft = getCapacity(member, dateKey) - used(member.id, dateKey);
+        for (const dateKey of fillerWorkDays) {
+          const capacityLeft = getPlannableCapacity(member, dateKey) - used(member.id, dateKey);
           if (capacityLeft <= 0) continue;
 
           addRoutine(
@@ -922,13 +1072,40 @@ export default function Home() {
     // This prevents carry-forward from monopolising Week 1 capacity.
     for (const member of activeMembers) {
       if (member.role === "designer") {
-        distribute(member, "Carry-forward", "carry_forward", "creative", 6, "Previous month pending workload");
+        distribute(
+          member,
+          "Carry-forward",
+          "carry_forward",
+          "creative",
+          6,
+          "Previous month pending workload",
+          deliveryWorkDays,
+          true
+        );
       }
       if (member.role === "editor") {
-        distribute(member, "Carry-forward", "carry_forward", "video", 6, "Previous month pending workload");
+        distribute(
+          member,
+          "Carry-forward",
+          "carry_forward",
+          "video",
+          6,
+          "Previous month pending workload",
+          deliveryWorkDays,
+          true
+        );
       }
       if (member.role === "production") {
-        distribute(member, "Carry-forward", "carry_forward", "shoot", 6, "Previous month pending workload");
+        distribute(
+          member,
+          "Carry-forward",
+          "carry_forward",
+          "shoot",
+          6,
+          "Previous month pending workload",
+          deliveryWorkDays,
+          true
+        );
       }
     }
 
@@ -964,14 +1141,16 @@ export default function Home() {
         (m) =>
           m.role === role &&
           assignments.some(
-            (a) => a.team_member_id === m.id && a.client_name === rule.client_name
+            (a) =>
+              a.team_member_id === m.id &&
+              clientNamesMatch(a.client_name, rule.client_name)
           )
       );
     }
 
     // ─── STEP 3: PASS 1 — Week-by-week, give every client their weekly minimum first ───
     // This ensures social media clients always get Week 1 slots before overflow fills them.
-    for (let week = 1; week <= 5; week++) {
+    for (let week = 1; week <= deliveryWeekCount; week++) {
       const weekDates = getWeekDates(week);
       if (weekDates.length === 0) continue;
 
@@ -992,10 +1171,7 @@ export default function Home() {
           (rule.ai_video_count ?? 0) +
           (rule.shoot_video_count ?? Math.max(0, rule.video_count - (rule.ai_video_count ?? 0)));
 
-        const weeklyMin =
-          rule.campaign_type === "social_media"
-            ? getSocialWeeklyMinimum(rule.client_name)
-            : Math.ceil(totalDeliverables / 5);
+        const weeklyMin = Math.ceil(totalDeliverables / deliveryWeekCount);
 
         // Designers
         if (designers.length > 0 && rem.designRemaining > 0) {
@@ -1008,7 +1184,8 @@ export default function Home() {
             toAllocate,
             weekDates,
             undefined,
-            rule.pod
+            rule.pod,
+            true
           );
           rem.designRemaining -= allocated;
         }
@@ -1024,7 +1201,8 @@ export default function Home() {
             toAllocate,
             weekDates,
             undefined,
-            rule.pod
+            rule.pod,
+            true
           );
           rem.writerRemaining -= allocated;
         }
@@ -1040,7 +1218,8 @@ export default function Home() {
             toAllocate,
             weekDates,
             undefined,
-            rule.pod
+            rule.pod,
+            true
           );
           rem.aiVideoRemaining -= allocated;
         }
@@ -1054,7 +1233,9 @@ export default function Home() {
             rule.campaign_type,
             "shoot",
             toAllocate,
-            weekDates
+            weekDates,
+            undefined,
+            true
           );
           const shootCount = shootAllocations.reduce((s, a) => s + a.count, 0);
           if (shootCount > 0) {
@@ -1069,7 +1250,8 @@ export default function Home() {
               shootCount,
               allowedEditorDates,
               "Requires production first",
-              rule.pod
+              rule.pod,
+              true
             );
             rem.shootVideoRemaining -= shootCount;
           }
@@ -1096,9 +1278,10 @@ export default function Home() {
           rule.campaign_type,
           rem.outputType,
           rem.designRemaining,
-          workDays,
+          deliveryWorkDays,
           undefined,
-          rule.pod
+          rule.pod,
+          true
         );
       }
 
@@ -1109,9 +1292,10 @@ export default function Home() {
           rule.campaign_type,
           "copy/script",
           rem.writerRemaining,
-          workDays,
+          deliveryWorkDays,
           undefined,
-          rule.pod
+          rule.pod,
+          true
         );
       }
 
@@ -1122,9 +1306,10 @@ export default function Home() {
           rule.campaign_type,
           "video",
           rem.aiVideoRemaining,
-          workDays,
+          deliveryWorkDays,
           undefined,
-          rule.pod
+          rule.pod,
+          true
         );
       }
 
@@ -1135,11 +1320,13 @@ export default function Home() {
           rule.campaign_type,
           "shoot",
           rem.shootVideoRemaining,
-          workDays
+          deliveryWorkDays,
+          undefined,
+          true
         );
         const shootCount = shootAllocations.reduce((s, a) => s + a.count, 0);
         if (shootCount > 0) {
-          const allowedEditorDates = workDays.filter((d) =>
+          const allowedEditorDates = deliveryWorkDays.filter((d) =>
             shootAllocations.some((a) => a.dateKey <= d)
           );
           distributeBalancedAcrossMembers(
@@ -1150,7 +1337,8 @@ export default function Home() {
             shootCount,
             allowedEditorDates,
             "Requires production first",
-            rule.pod
+            rule.pod,
+            true
           );
         }
       }
@@ -1746,6 +1934,30 @@ export default function Home() {
       return;
     }
 
+    const { data: freshAvailability, error: availabilityError } = await supabase
+      .from("member_availability")
+      .select("*")
+      .order("unavailable_date");
+
+    if (availabilityError) {
+      alert(availabilityError.message);
+      return;
+    }
+
+    const nextAvailability = freshAvailability ?? [];
+    setAvailability(nextAvailability);
+
+    const rebalanced = await rebalancePendingRoutinePlan(
+      leaveDate,
+      nextAvailability,
+      false
+    );
+
+    if (!rebalanced) {
+      await loadAdminData();
+      return;
+    }
+
     setLeaveMemberId("");
     setLeaveDate("");
     setLeaveCapacity(0);
@@ -1765,8 +1977,21 @@ export default function Home() {
   }
 
   async function loadRoutineBoardData() {
+    const { data: planData } = await supabase
+      .from("routine_plans")
+      .select("id")
+      .eq("month_start", "2026-05-01")
+      .maybeSingle();
+
     const [{ data: routineData }, { data: rulesData }] = await Promise.all([
-      supabase.from("routine_items").select("*").order("work_date").order("person_name"),
+      planData
+        ? supabase
+            .from("routine_items")
+            .select("*")
+            .eq("plan_id", planData.id)
+            .order("work_date")
+            .order("person_name")
+        : Promise.resolve({ data: [] }),
       supabase
         .from("campaign_rules")
         .select("*")
@@ -1780,12 +2005,34 @@ export default function Home() {
   }
 
   async function rebalanceRoutinePlan() {
-    if (!rebalanceFromDate) return;
+    const { data: freshAvailability, error } = await supabase
+      .from("member_availability")
+      .select("*")
+      .order("unavailable_date");
 
-    const confirmed = confirm(
-      `Rebalance pending future work from ${rebalanceFromDate}? Completed work will be kept.`
-    );
-    if (!confirmed) return;
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    const nextAvailability = freshAvailability ?? [];
+    setAvailability(nextAvailability);
+    await rebalancePendingRoutinePlan(rebalanceFromDate, nextAvailability, true);
+  }
+
+  async function rebalancePendingRoutinePlan(
+    fromDate: string,
+    availabilityEntries = availability,
+    shouldConfirm = true
+  ) {
+    if (!fromDate) return false;
+
+    if (shouldConfirm) {
+      const confirmed = confirm(
+        `Rebalance pending future work from ${fromDate}? Completed work will be kept.`
+      );
+      if (!confirmed) return false;
+    }
 
     const { data: plan } = await supabase
       .from("routine_plans")
@@ -1794,32 +2041,55 @@ export default function Home() {
       .maybeSingle();
 
     if (!plan) {
-      alert("No active May 2026 plan found.");
-      return;
+      if (shouldConfirm) {
+        alert("No active May 2026 plan found.");
+      }
+      return false;
     }
 
-    const futureItems = routineItems.filter((item) => item.work_date >= rebalanceFromDate);
+    const { data: latestRoutineItems, error: routineFetchError } = await supabase
+      .from("routine_items")
+      .select("*")
+      .eq("plan_id", plan.id)
+      .gte("work_date", fromDate)
+      .order("work_date")
+      .order("person_name");
+
+    if (routineFetchError) {
+      alert(routineFetchError.message);
+      return false;
+    }
+
+    const futureItems = latestRoutineItems ?? [];
     const preservedItems = futureItems.filter((item) => item.completed_count > 0);
     const itemsToRebuild = futureItems.filter((item) => item.completed_count === 0);
 
     const remainingWork = itemsToRebuild
       .map((item) => ({
-        member: members.find((member) => member.id === item.team_member_id),
+        originalMember: members.find((member) => member.id === item.team_member_id),
         client_name: item.client_name,
         campaign_type: item.campaign_type,
         output_type: item.output_type,
         planned_count: item.planned_count,
         notes: item.notes ?? undefined,
       }))
-      .filter((item) => item.member);
+      .filter((item) => item.originalMember);
 
-    const idsToDelete = itemsToRebuild.map((item) => item.id);
+    if (itemsToRebuild.length > 0) {
+      const { error: deleteError } = await supabase
+        .from("routine_items")
+        .delete()
+        .eq("plan_id", plan.id)
+        .gte("work_date", fromDate)
+        .eq("completed_count", 0);
 
-    if (idsToDelete.length > 0) {
-      await supabase.from("routine_items").delete().in("id", idsToDelete);
+      if (deleteError) {
+        alert(deleteError.message);
+        return false;
+      }
     }
 
-    const workDays = getMay2026WorkDays().filter((dateKey) => dateKey >= rebalanceFromDate);
+    const workDays = getMay2026WorkDays().filter((dateKey) => dateKey >= fromDate);
     const usage = new Map<string, number>();
 
     for (const item of preservedItems) {
@@ -1858,7 +2128,7 @@ export default function Home() {
         output_type: outputType,
         planned_count: count,
         completed_count: 0,
-        carried_from: rebalanceFromDate,
+        carried_from: fromDate,
         is_unplanned: false,
         notes: notes ?? null,
       });
@@ -1866,27 +2136,58 @@ export default function Home() {
       addUsage(member.id, dateKey, count);
     }
 
+    function getRebalanceCandidates(workItem: (typeof remainingWork)[number]) {
+      const originalMember = workItem.originalMember as TeamMember;
+      const sameRoleMembers = members.filter(
+        (member) => member.is_active && member.role === originalMember.role
+      );
+
+      const assignedMembers = sameRoleMembers.filter((member) =>
+        assignments.some(
+          (assignment) =>
+            assignment.is_active &&
+            clientNamesMatch(assignment.client_name, workItem.client_name) &&
+            assignment.team_member_id === member.id
+        )
+      );
+
+      const candidatePool = assignedMembers.length > 0 ? assignedMembers : sameRoleMembers;
+
+      return [...candidatePool].sort((a, b) => {
+        if (a.id === originalMember.id && b.id !== originalMember.id) return 1;
+        if (a.id !== originalMember.id && b.id === originalMember.id) return -1;
+        if (a.pod === originalMember.pod && b.pod !== originalMember.pod) return -1;
+        if (a.pod !== originalMember.pod && b.pod === originalMember.pod) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    }
+
     for (const workItem of remainingWork) {
       let remaining = workItem.planned_count;
-      const member = workItem.member as TeamMember;
+      const candidates = getRebalanceCandidates(workItem);
 
       for (const dateKey of workDays) {
         if (remaining <= 0) break;
 
-        const capacityLeft = getCapacity(member, dateKey) - used(member.id, dateKey);
-        if (capacityLeft <= 0) continue;
+        for (const member of candidates) {
+          if (remaining <= 0) break;
 
-        const count = Math.min(capacityLeft, remaining);
-        addRoutine(
-          member,
-          dateKey,
-          workItem.client_name,
-          workItem.campaign_type,
-          workItem.output_type,
-          count,
-          workItem.notes
-        );
-        remaining -= count;
+          const capacityLeft =
+            getPlannableCapacity(member, dateKey, availabilityEntries) - used(member.id, dateKey);
+          if (capacityLeft <= 0) continue;
+
+          const count = Math.min(capacityLeft, remaining);
+          addRoutine(
+            member,
+            dateKey,
+            workItem.client_name,
+            workItem.campaign_type,
+            workItem.output_type,
+            count,
+            workItem.notes
+          );
+          remaining -= count;
+        }
       }
     }
 
@@ -1899,6 +2200,13 @@ export default function Home() {
     }
 
     await loadAdminData();
+    await loadRoutineBoardData();
+
+    if (currentMember) {
+      await loadMemberRoutineItems(currentMember);
+    }
+
+    return true;
   }
 
   const pendingRoutineItems = memberRoutineItems

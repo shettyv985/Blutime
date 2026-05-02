@@ -24,8 +24,15 @@ type ClientWeekSummary = {
   totalDone: number;
 };
 
-function getWeekNumber(dateKey: string) {
-  return Math.ceil(Number(dateKey.slice(-2)) / 7);
+function getWeekNumber(dateKey: string, weekStartDate: string) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  const startDate = new Date(`${weekStartDate}T00:00:00`);
+  const dayOffset = Math.max(
+    0,
+    Math.floor((date.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000))
+  );
+
+  return Math.floor(dayOffset / 7) + 1;
 }
 
 function formatDate(date: string) {
@@ -34,6 +41,24 @@ function formatDate(date: string) {
     month: "short",
     day: "numeric",
   });
+}
+
+function formatShortDate(date: string) {
+  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function getWeekDateLabel(weekItems: RoutineItem[]) {
+  const dates = Array.from(new Set(weekItems.map((item) => item.work_date))).sort();
+  const firstDate = dates[0];
+  const lastDate = dates[dates.length - 1];
+
+  if (!firstDate) return "";
+  if (firstDate === lastDate) return formatShortDate(firstDate);
+
+  return `${formatShortDate(firstDate)} - ${formatShortDate(lastDate)}`;
 }
 
 function getStatus(item: RoutineItem) {
@@ -82,16 +107,22 @@ export function WeeklyRoutineTracker({
   campaignRules,
   highlightedPersonName,
 }: WeeklyRoutineTrackerProps) {
+  const weekStartDate =
+    [...items].sort((a, b) => a.work_date.localeCompare(b.work_date))[0]?.work_date ??
+    "2026-05-01";
   const groupedByWeek = new Map<number, RoutineItem[]>();
 
   for (const item of items) {
-    const week = getWeekNumber(item.work_date);
+    const week = getWeekNumber(item.work_date, weekStartDate);
     const current = groupedByWeek.get(week) ?? [];
     current.push(item);
     groupedByWeek.set(week, current);
   }
 
   const weeks = Array.from(groupedByWeek.entries()).sort((a, b) => a[0] - b[0]);
+  const weekLabels = new Map(
+    weeks.map(([week, weekItems]) => [week, getWeekDateLabel(weekItems)])
+  );
 
   const clientWeeklyMap = new Map<string, ClientWeekSummary>();
 
@@ -132,7 +163,7 @@ export function WeeklyRoutineTracker({
 
     const family: CampaignFamily = item.campaign_type;
     const key = `${item.client_name}__${family}`;
-    const week = getWeekNumber(item.work_date);
+    const week = getWeekNumber(item.work_date, weekStartDate);
 
     const current: ClientWeekSummary = clientWeeklyMap.get(key) ?? {
       key,
@@ -217,7 +248,14 @@ export function WeeklyRoutineTracker({
                 style={{ borderColor: "var(--border)" }}
               >
                 <div className="mb-4">
-                  <h4 className="font-medium">Week {week}</h4>
+                  <h4 className="font-medium">
+                    Week {week}
+                    {weekLabels.get(week) ? (
+                      <span className="ml-2 text-sm font-normal text-muted">
+                        {weekLabels.get(week)}
+                      </span>
+                    ) : null}
+                  </h4>
                 </div>
 
                 <div className="space-y-4">
@@ -415,10 +453,38 @@ export function WeeklyRoutineTracker({
                 <th className="px-3 py-2">Monthly total</th>
                 <th className="px-3 py-2">Total done</th>
                 <th className="px-3 py-2">Progress</th>
-                <th className="px-3 py-2">Week 1</th>
-                <th className="px-3 py-2">Week 2</th>
-                <th className="px-3 py-2">Week 3</th>
-                <th className="px-3 py-2">Week 4/5</th>
+                <th className="px-3 py-2">
+                  <div>Week 1</div>
+                  {weekLabels.get(1) ? (
+                    <div className="text-xs font-normal normal-case text-muted">
+                      {weekLabels.get(1)}
+                    </div>
+                  ) : null}
+                </th>
+                <th className="px-3 py-2">
+                  <div>Week 2</div>
+                  {weekLabels.get(2) ? (
+                    <div className="text-xs font-normal normal-case text-muted">
+                      {weekLabels.get(2)}
+                    </div>
+                  ) : null}
+                </th>
+                <th className="px-3 py-2">
+                  <div>Week 3</div>
+                  {weekLabels.get(3) ? (
+                    <div className="text-xs font-normal normal-case text-muted">
+                      {weekLabels.get(3)}
+                    </div>
+                  ) : null}
+                </th>
+                <th className="px-3 py-2">
+                  <div>Week 4/5</div>
+                  {weekLabels.get(4) || weekLabels.get(5) ? (
+                    <div className="text-xs font-normal normal-case text-muted">
+                      {[weekLabels.get(4), weekLabels.get(5)].filter(Boolean).join(" + ")}
+                    </div>
+                  ) : null}
+                </th>
               </tr>
             </thead>
             <tbody>

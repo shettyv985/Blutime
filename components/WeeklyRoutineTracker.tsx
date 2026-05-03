@@ -24,6 +24,10 @@ type ClientWeekSummary = {
   totalDone: number;
 };
 
+function normalizeClientName(value: string) {
+  return value.trim().toLowerCase();
+}
+
 function getWeekNumber(dateKey: string, weekStartDate: string) {
   const date = new Date(`${dateKey}T00:00:00`);
   const startDate = new Date(`${weekStartDate}T00:00:00`);
@@ -129,7 +133,7 @@ export function WeeklyRoutineTracker({
   for (const rule of campaignRules) {
     if (!isTrackedFamily(rule.campaign_type)) continue;
 
-    const key = `${rule.client_name}__${rule.campaign_type}`;
+    const key = `${normalizeClientName(rule.client_name)}__${rule.campaign_type}`;
         const current: ClientWeekSummary = clientWeeklyMap.get(key) ?? {
       key,
       clientName: rule.client_name,
@@ -162,7 +166,7 @@ export function WeeklyRoutineTracker({
     if (!isTrackedFamily(item.campaign_type)) continue;
 
     const family: CampaignFamily = item.campaign_type;
-    const key = `${item.client_name}__${family}`;
+    const key = `${normalizeClientName(item.client_name)}__${family}`;
     const week = getWeekNumber(item.work_date, weekStartDate);
 
     const current: ClientWeekSummary = clientWeeklyMap.get(key) ?? {

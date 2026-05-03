@@ -1163,19 +1163,12 @@ export default function Home() {
         const editors = getAssignedMembers(rule, "editor");
         const production = activeMembers.find((m) => m.role === "production");
 
-        // Weekly minimum per client:
-        // - social_media: getSocialWeeklyMinimum (2 or 3)
-        // - performance: spread total evenly across 5 weeks
-        const totalDeliverables =
-          (rule.static_count + rule.canva_count) +
-          (rule.ai_video_count ?? 0) +
-          (rule.shoot_video_count ?? Math.max(0, rule.video_count - (rule.ai_video_count ?? 0)));
-
-        const weeklyMin = Math.ceil(totalDeliverables / deliveryWeekCount);
+        const weeksLeft = deliveryWeekCount - week + 1;
+        const getWeekAllocation = (remaining: number) => Math.ceil(remaining / weeksLeft);
 
         // Designers
         if (designers.length > 0 && rem.designRemaining > 0) {
-          const toAllocate = Math.min(weeklyMin, rem.designRemaining);
+          const toAllocate = getWeekAllocation(rem.designRemaining);
           const allocated = distributeBalancedAcrossMembers(
             designers,
             rule.client_name,
@@ -1192,7 +1185,7 @@ export default function Home() {
 
         // Writers
         if (writers.length > 0 && rem.writerRemaining > 0) {
-          const toAllocate = Math.min(weeklyMin, rem.writerRemaining);
+          const toAllocate = getWeekAllocation(rem.writerRemaining);
           const allocated = distributeBalancedAcrossMembers(
             writers,
             rule.client_name,
@@ -1209,7 +1202,7 @@ export default function Home() {
 
         // AI video editors
         if (editors.length > 0 && rem.aiVideoRemaining > 0) {
-          const toAllocate = Math.min(weeklyMin, rem.aiVideoRemaining);
+          const toAllocate = getWeekAllocation(rem.aiVideoRemaining);
           const allocated = distributeBalancedAcrossMembers(
             editors,
             rule.client_name,
@@ -1226,7 +1219,7 @@ export default function Home() {
 
         // Shoot video: production shoots first, then editors edit on same/later dates
         if (production && editors.length > 0 && rem.shootVideoRemaining > 0) {
-          const toAllocate = Math.min(weeklyMin, rem.shootVideoRemaining);
+          const toAllocate = getWeekAllocation(rem.shootVideoRemaining);
           const shootAllocations = allocateAndCaptureOnDates(
             production,
             rule.client_name,

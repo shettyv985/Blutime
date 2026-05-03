@@ -27,6 +27,11 @@ import type {
 
 const ACTIVE_TIMERS_STORAGE_KEY = "blutime-active-timers";
 
+type AbsenceLookupEntry = Pick<
+  MemberAvailability,
+  "team_member_id" | "unavailable_date" | "capacity_override" | "reason"
+>;
+
 export default function Home() {
   const [user, setUser] = useState<any>(null);
   const [currentMember, setCurrentMember] = useState<TeamMember | null>(null);
@@ -572,7 +577,7 @@ export default function Home() {
     ).padStart(2, "0")}`;
   }
 
-  const sharedRoutineRoles: TeamMember["role"][] = ["writer", "designer", "editor"];
+  const sharedRoutineRoles: TeamMember["role"][] = ["writer", "designer", "editor", "production"];
 
   function isSharedRoutineItem(item: RoutineItem) {
     return currentMember ? item.team_member_id !== currentMember.id : false;
@@ -587,6 +592,42 @@ export default function Home() {
 
     const match = note.match(/\(orig:([^)]+)\)/);
     return match?.[1] ?? null;
+  }
+
+  function getAbsentReason(
+    memberId: string,
+    dateKey: string,
+    entries: AbsenceLookupEntry[] = availability
+  ) {
+    const entry = entries.find(
+      (item) =>
+        item.team_member_id === memberId &&
+        item.unavailable_date === dateKey &&
+        (item.capacity_override ?? 0) === 0
+    );
+
+    return entry?.reason?.trim() || (entry ? "On leave" : "");
+  }
+
+  function isFullyAbsent(
+    memberId: string,
+    dateKey: string,
+    entries: AbsenceLookupEntry[] = availability
+  ) {
+    return Boolean(getAbsentReason(memberId, dateKey, entries));
+  }
+
+  function isCoverageRoutineItem(item: RoutineItem | null) {
+    return Boolean(item?.notes?.startsWith("Coverage window"));
+  }
+
+  function buildCoverageNote(absentItem: RoutineItem, shiftedItemId: string) {
+    return `Coverage window for ${absentItem.person_name} until end of ${absentItem.work_date} (orig:${shiftedItemId})`;
+  }
+
+  function getCoverageSourceId(item: RoutineItem | null) {
+    if (!isCoverageRoutineItem(item)) return null;
+    return extractOriginalRoutineItemId(item?.notes);
   }
 
   async function loadMemberRoutineItems(member: TeamMember) {
@@ -631,15 +672,12 @@ export default function Home() {
 
     const otherMemberIds = sameRoleMemberIds.filter((id) => id !== member.id);
 
-    let absentEntries: Pick<
-      MemberAvailability,
-      "team_member_id" | "unavailable_date" | "capacity_override"
-    >[] = [];
+    let absentEntries: AbsenceLookupEntry[] = [];
 
     if (otherMemberIds.length > 0) {
       const { data: availabilityData } = await supabase
         .from("member_availability")
-        .select("team_member_id,unavailable_date,capacity_override")
+        .select("team_member_id,unavailable_date,capacity_override,reason")
         .in("team_member_id", otherMemberIds);
 
       absentEntries = availabilityData ?? [];
@@ -659,7 +697,11 @@ export default function Home() {
       }
 
       const isAbsentSharedItem = fullyAbsentKeys.has(`${item.team_member_id}-${item.work_date}`);
-      return isAbsentSharedItem;
+      const hasPendingWork = item.completed_count < item.planned_count;
+      const isOpenTodayCoverage =
+        isCoverageRoutineItem(item) && item.work_date === getTodayDateKey();
+
+      return isAbsentSharedItem && hasPendingWork && isOpenTodayCoverage;
     });
 
     visibleItems.sort((a, b) => {
@@ -1699,6 +1741,12 @@ export default function Home() {
           alert(originalUpdateError.message);
           return;
         }
+
+        const coverageSourceId = getCoverageSourceId(originalRoutineItem);
+        if (coverageSourceId) {
+          const restored = await restoreShiftedCoverageWork(coverageSourceId);
+          if (!restored) return;
+        }
       } else {
         const nextCompletedCount = Math.max(0, (linkedRoutineItem.completed_count ?? 0) - 1);
 
@@ -1828,6 +1876,12 @@ export default function Home() {
         if (originalUpdateError) {
           alert(originalUpdateError.message);
           return;
+        }
+
+        const coverageSourceId = getCoverageSourceId(originalRoutineItem);
+        if (coverageSourceId) {
+          const restored = await restoreShiftedCoverageWork(coverageSourceId);
+          if (!restored) return;
         }
       } else {
         const nextCompletedCount = Math.max(0, (linkedRoutineItem.completed_count ?? 0) - 1);
@@ -2059,6 +2113,7 @@ export default function Home() {
 
     const remainingWork = itemsToRebuild
       .map((item) => ({
+        originalItem: item,
         originalMember: members.find((member) => member.id === item.team_member_id),
         client_name: item.client_name,
         campaign_type: item.campaign_type,
@@ -2089,7 +2144,11 @@ export default function Home() {
       usage.set(`${item.team_member_id}-${item.work_date}`, item.planned_count);
     }
 
-    const rebuilt: Omit<RoutineItem, "id">[] = [];
+    type RebuiltRoutineItem = Omit<RoutineItem, "id"> & {
+      coverageSource?: RoutineItem;
+    };
+
+    const rebuilt: RebuiltRoutineItem[] = [];
 
     function used(memberId: string, dateKey: string) {
       return usage.get(`${memberId}-${dateKey}`) ?? 0;
@@ -2107,7 +2166,8 @@ export default function Home() {
       outputType: string,
       count: number,
       notes?: string,
-      podOverride?: string
+      podOverride?: string,
+      coverageSource?: RoutineItem
     ) {
       rebuilt.push({
         plan_id: plan.id,
@@ -2124,6 +2184,7 @@ export default function Home() {
         carried_from: fromDate,
         is_unplanned: false,
         notes: notes ?? null,
+        coverageSource,
       });
 
       addUsage(member.id, dateKey, count);
@@ -2177,7 +2238,15 @@ export default function Home() {
             workItem.campaign_type,
             workItem.output_type,
             count,
-            workItem.notes
+            workItem.notes,
+            undefined,
+            isFullyAbsent(
+              workItem.originalItem.team_member_id,
+              workItem.originalItem.work_date,
+              availabilityEntries
+            )
+              ? workItem.originalItem
+              : undefined
           );
           remaining -= count;
         }
@@ -2185,10 +2254,52 @@ export default function Home() {
     }
 
     if (rebuilt.length > 0) {
-      const { error } = await supabase.from("routine_items").insert(rebuilt);
+      const insertable = rebuilt.map(({ coverageSource, ...item }) => item);
+      const { data: insertedItems, error } = await supabase
+        .from("routine_items")
+        .insert(insertable)
+        .select("*");
+
       if (error) {
         alert(error.message);
         return;
+      }
+
+      const coverageItems: Omit<RoutineItem, "id">[] = [];
+
+      for (let index = 0; index < rebuilt.length; index++) {
+        const coverageSource = rebuilt[index].coverageSource;
+        const shiftedItem = insertedItems?.[index];
+
+        if (!coverageSource || !shiftedItem) continue;
+
+        coverageItems.push({
+          plan_id: plan.id,
+          work_date: coverageSource.work_date,
+          team_member_id: coverageSource.team_member_id,
+          person_name: coverageSource.person_name,
+          role: coverageSource.role,
+          pod: coverageSource.pod,
+          client_name: coverageSource.client_name,
+          campaign_type: coverageSource.campaign_type,
+          output_type: coverageSource.output_type,
+          planned_count: shiftedItem.planned_count,
+          completed_count: 0,
+          carried_from: coverageSource.work_date,
+          is_unplanned: false,
+          notes: buildCoverageNote(coverageSource, shiftedItem.id),
+        });
+      }
+
+      if (coverageItems.length > 0) {
+        const { error: coverageInsertError } = await supabase
+          .from("routine_items")
+          .insert(coverageItems);
+
+        if (coverageInsertError) {
+          alert(coverageInsertError.message);
+          return;
+        }
       }
     }
 
@@ -2352,6 +2463,63 @@ export default function Home() {
     setTimers((current) => current.filter((timer) => timer.id !== id));
   }
 
+  async function fetchRoutineItem(routineItemId: string) {
+    const { data, error } = await supabase
+      .from("routine_items")
+      .select("*")
+      .eq("id", routineItemId)
+      .maybeSingle();
+
+    if (error) {
+      alert(error.message);
+      return null;
+    }
+
+    return data as RoutineItem | null;
+  }
+
+  async function reduceShiftedCoverageWork(shiftedRoutineItemId: string) {
+    const shiftedItem = await fetchRoutineItem(shiftedRoutineItemId);
+    if (!shiftedItem) return false;
+
+    const nextPlannedCount = Math.max(0, (shiftedItem.planned_count ?? 0) - 1);
+    const nextCompletedCount = Math.min(shiftedItem.completed_count ?? 0, nextPlannedCount);
+
+    const { error } = await supabase
+      .from("routine_items")
+      .update({
+        planned_count: nextPlannedCount,
+        completed_count: nextCompletedCount,
+      })
+      .eq("id", shiftedItem.id);
+
+    if (error) {
+      alert(error.message);
+      return false;
+    }
+
+    return true;
+  }
+
+  async function restoreShiftedCoverageWork(shiftedRoutineItemId: string) {
+    const shiftedItem = await fetchRoutineItem(shiftedRoutineItemId);
+    if (!shiftedItem) return false;
+
+    const { error } = await supabase
+      .from("routine_items")
+      .update({
+        planned_count: (shiftedItem.planned_count ?? 0) + 1,
+      })
+      .eq("id", shiftedItem.id);
+
+    if (error) {
+      alert(error.message);
+      return false;
+    }
+
+    return true;
+  }
+
   async function stopTimer(timer: ActiveTimer) {
     if (!timer.outputText.trim()) {
       alert("Please paste or type the output before stopping.");
@@ -2367,6 +2535,9 @@ export default function Home() {
     const endedAt = new Date().toISOString();
 
     if (timer.routineItemId) {
+      const routineItemBeforeCompletion = await fetchRoutineItem(timer.routineItemId);
+      const shiftedCoverageSourceId = getCoverageSourceId(routineItemBeforeCompletion);
+
       const { error } = await supabase.rpc("complete_shared_routine_task", {
         p_routine_item_id: timer.routineItemId,
         p_user_id: user.id,
@@ -2388,6 +2559,11 @@ export default function Home() {
       if (error) {
         alert(error.message);
         return;
+      }
+
+      if (shiftedCoverageSourceId) {
+        const reduced = await reduceShiftedCoverageWork(shiftedCoverageSourceId);
+        if (!reduced) return;
       }
     } else {
       const { error } = await supabase.from("time_logs").insert({
@@ -2509,6 +2685,9 @@ export default function Home() {
             <WeeklyRoutineTracker
               items={routineItems}
               campaignRules={campaignRules}
+              availability={availability}
+              logs={adminLogs.length > 0 ? adminLogs : logs}
+              members={members}
               highlightedPersonName={currentMember?.name}
             />
           </section>

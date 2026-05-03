@@ -1,8 +1,11 @@
-import type { CampaignRule, RoutineItem } from "../types";
+import type { CampaignRule, MemberAvailability, RoutineItem, TeamMember, TimeLog } from "../types";
 
 type WeeklyRoutineTrackerProps = {
   items: RoutineItem[];
   campaignRules: CampaignRule[];
+  availability: MemberAvailability[];
+  logs: TimeLog[];
+  members: TeamMember[];
   highlightedPersonName?: string;
 };
 
@@ -106,9 +109,19 @@ function isHighlightedPerson(item: RoutineItem, highlightedPersonName?: string) 
   );
 }
 
+function extractOriginalRoutineItemId(note?: string | null) {
+  if (!note) return null;
+
+  const match = note.match(/\(orig:([^)]+)\)/);
+  return match?.[1] ?? null;
+}
+
 export function WeeklyRoutineTracker({
   items,
   campaignRules,
+  availability,
+  logs,
+  members,
   highlightedPersonName,
 }: WeeklyRoutineTrackerProps) {
   const weekStartDate =
@@ -127,6 +140,50 @@ export function WeeklyRoutineTracker({
   const weekLabels = new Map(
     weeks.map(([week, weekItems]) => [week, getWeekDateLabel(weekItems)])
   );
+  const memberByEmail = new Map(
+    members
+      .filter((member) => member.email)
+      .map((member) => [member.email?.trim().toLowerCase(), member])
+  );
+  const itemById = new Map(items.map((item) => [item.id, item]));
+
+  function getAbsentReason(item: RoutineItem) {
+    const entry = availability.find(
+      (availabilityItem) =>
+        availabilityItem.team_member_id === item.team_member_id &&
+        availabilityItem.unavailable_date === item.work_date &&
+        (availabilityItem.capacity_override ?? 0) === 0
+    );
+
+    return entry?.reason?.trim() || (entry ? "On leave" : "");
+  }
+
+  function getLogMember(log: TimeLog) {
+    if (!log.user_email) return null;
+    return memberByEmail.get(log.user_email.trim().toLowerCase()) ?? null;
+  }
+
+  function getCoverageNames(item: RoutineItem) {
+    const names = new Set<string>();
+
+    for (const log of logs) {
+      if (!log.routine_item_id) continue;
+
+      const linkedItem = itemById.get(log.routine_item_id);
+      const originalRoutineItemId = extractOriginalRoutineItemId(linkedItem?.notes);
+      const coversThisItem = log.routine_item_id === item.id || originalRoutineItemId === item.id;
+
+      if (!coversThisItem) continue;
+
+      const logMember = getLogMember(log);
+      const logMemberName = logMember?.name ?? log.user_email ?? "Someone";
+
+      if (logMember?.id === item.team_member_id) continue;
+      names.add(logMemberName);
+    }
+
+    return Array.from(names);
+  }
 
   const clientWeeklyMap = new Map<string, ClientWeekSummary>();
 
@@ -362,6 +419,8 @@ export function WeeklyRoutineTracker({
                                           item,
                                           highlightedPersonName
                                         );
+                                        const absentReason = getAbsentReason(item);
+                                        const coverageNames = getCoverageNames(item);
 
                                         return (
                                           <tr
@@ -369,7 +428,9 @@ export function WeeklyRoutineTracker({
                                             className="border-t"
                                             style={{
                                               borderColor: "var(--border)",
-                                              background: isHighlighted
+                                              background: absentReason
+                                                ? "var(--warning-soft)"
+                                                : isHighlighted
                                                 ? "color-mix(in srgb, var(--primary-glow) 45%, transparent)"
                                                 : "transparent",
                                             }}
@@ -396,6 +457,14 @@ export function WeeklyRoutineTracker({
                                               >
                                                 {item.role} · {item.pod}
                                               </div>
+                                              {absentReason ? (
+                                                <div
+                                                  className="mt-1 text-xs"
+                                                  style={{ color: "var(--warning)", fontWeight: 700 }}
+                                                >
+                                                  Absent: {absentReason}
+                                                </div>
+                                              ) : null}
                                             </td>
                                             <td className="px-3 py-2">
                                               {item.client_name === "Carry-forward"
@@ -411,7 +480,17 @@ export function WeeklyRoutineTracker({
                                             <td className="px-3 py-2">{item.planned_count}</td>
                                             <td className="px-3 py-2">{item.completed_count}</td>
                                             <td className="px-3 py-2">{getStatus(item)}</td>
-                                            <td className="px-3 py-2">{item.notes ?? "-"}</td>
+                                            <td className="px-3 py-2">
+                                              <div>{item.notes ?? "-"}</div>
+                                              {coverageNames.length > 0 ? (
+                                                <div
+                                                  className="mt-1 text-xs"
+                                                  style={{ color: "var(--success)", fontWeight: 700 }}
+                                                >
+                                                  Covered by {coverageNames.join(", ")}
+                                                </div>
+                                              ) : null}
+                                            </td>
                                           </tr>
                                         );
                                       })}

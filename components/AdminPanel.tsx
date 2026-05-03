@@ -501,6 +501,9 @@ export function AdminPanel({
             <WeeklyRoutineTracker
               items={routineItems}
               campaignRules={campaignRules}
+              availability={availability}
+              logs={logs}
+              members={members}
             />
           </div>
         )}

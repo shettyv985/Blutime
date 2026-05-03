@@ -52,7 +52,6 @@ export function TimerForm({
       className="card"
       style={{ borderRadius: "var(--radius-xl)", padding: "1.375rem 1.5rem" }}
     >
-      {/* Header */}
       <div
         style={{
           display: "flex",
@@ -80,7 +79,7 @@ export function TimerForm({
                 fontSize: "0.7rem",
               }}
             >
-              ▶
+              &gt;
             </span>
             Start new timer
           </h2>
@@ -88,12 +87,11 @@ export function TimerForm({
         </div>
         {routineDateLabel && (
           <span className="badge badge-primary" style={{ flexShrink: 0 }}>
-            📅 {routineDateLabel}
+            {routineDateLabel}
           </span>
         )}
       </div>
 
-      {/* Routine selector */}
       <div style={{ marginBottom: "1rem" }}>
         <label style={labelStyle}>Planned routine</label>
         <select
@@ -104,19 +102,20 @@ export function TimerForm({
           <option value="">No planned routine selected</option>
           {routineItems.map((item) => {
             const isShared = item.team_member_id !== currentMemberId;
+            const isCoverage = item.notes?.startsWith("Coverage window");
+
             return (
               <option key={item.id} value={item.id}>
-                {isShared ? "[Shared] " : ""}
-                {item.client_name} · {item.campaign_type} · {item.output_type} ·{" "}
+                {isShared ? (isCoverage ? "[Coverage pickup] " : "[Shared] ") : ""}
+                {item.client_name} - {item.campaign_type} - {item.output_type} -{" "}
                 {item.completed_count}/{item.planned_count}
-                {isShared ? ` · ${item.person_name}` : ""}
+                {isShared ? ` - ${item.person_name}` : ""}
               </option>
             );
           })}
         </select>
       </div>
 
-      {/* Warning */}
       {routineWarning && (
         <div
           style={{
@@ -133,12 +132,11 @@ export function TimerForm({
             fontWeight: 500,
           }}
         >
-          <span style={{ flexShrink: 0, marginTop: "0.05rem" }}>⚠</span>
+          <span style={{ flexShrink: 0, marginTop: "0.05rem" }}>!</span>
           <span>{routineWarning}</span>
         </div>
       )}
 
-      {/* Fields row */}
       <div
         style={{
           display: "grid",
@@ -152,7 +150,7 @@ export function TimerForm({
           <label style={labelStyle}>Task</label>
           <input
             className="field"
-            placeholder="Task, link, or description…"
+            placeholder="Task, link, or description..."
             value={taskText}
             onChange={(e) => onTaskTextChange(e.target.value)}
           />
@@ -167,7 +165,9 @@ export function TimerForm({
           >
             <option value="">Select client</option>
             {clients.map((client) => (
-              <option key={client.id} value={client.id}>{client.name}</option>
+              <option key={client.id} value={client.id}>
+                {client.name}
+              </option>
             ))}
           </select>
         </div>
@@ -181,7 +181,9 @@ export function TimerForm({
           >
             <option value="">Select category</option>
             {categories.map((item) => (
-              <option key={item.id} value={item.name}>{item.name}</option>
+              <option key={item.id} value={item.name}>
+                {item.name}
+              </option>
             ))}
           </select>
         </div>
@@ -207,11 +209,10 @@ export function TimerForm({
             whiteSpace: "nowrap",
           }}
         >
-          Start ▶
+          Start
         </button>
       </div>
 
-      {/* Responsive override */}
       <style>{`
         @media (max-width: 700px) {
           .timer-form-grid {

@@ -2752,6 +2752,7 @@ export default function Home() {
           onStart={startTimer}
         />
 
+        {!isAdmin ? (
         <section className="mt-4">
           <div className="card rounded-2xl p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2798,7 +2799,9 @@ export default function Home() {
             </div>
           </div>
         </section>
+        ) : null}
 
+        {!isAdmin ? (
         <section className="mt-4">
           {employeeRoutineView === "routine" ? (
           <WeeklyRoutineTracker
@@ -2836,6 +2839,7 @@ export default function Home() {
           />
           ) : null}
         </section>
+        ) : null}
 
         <section className="mt-6">
           <div className="mb-3 flex flex-col gap-1">

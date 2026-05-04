@@ -27,6 +27,16 @@ type ClientWeekSummary = {
   totalDone: number;
 };
 
+type EmployeeWeekSummary = {
+  key: string;
+  personName: string;
+  role: string;
+  pod: string;
+  daysByWeek: Record<number, Record<string, { planned: number; done: number }>>;
+  totalPlanned: number;
+  totalDone: number;
+};
+
 function normalizeClientName(value: string) {
   return value.trim().toLowerCase();
 }
@@ -57,6 +67,12 @@ function formatShortDate(date: string) {
   });
 }
 
+function getDayInitial(dateKey: string) {
+  return new Date(`${dateKey}T00:00:00`)
+    .toLocaleDateString(undefined, { weekday: "short" })
+    .slice(0, 1);
+}
+
 function getWeekDateLabel(weekItems: RoutineItem[]) {
   const dates = Array.from(new Set(weekItems.map((item) => item.work_date))).sort();
   const firstDate = dates[0];
@@ -72,6 +88,44 @@ function getStatus(item: RoutineItem) {
   if (item.completed_count >= item.planned_count) return "Done";
   if (item.completed_count > 0) return "In progress";
   return "Pending";
+}
+
+function isCoverageRoutineItem(item: RoutineItem) {
+  return Boolean(item.notes?.startsWith("Coverage window"));
+}
+
+function getNextWorkingDateLabel(dateKey: string) {
+  const startDate = new Date(`${dateKey}T00:00:00`);
+
+  for (let offset = 1; offset <= 7; offset++) {
+    const candidate = new Date(startDate);
+    candidate.setDate(startDate.getDate() + offset);
+    const saturdayNumber = Math.ceil(candidate.getDate() / 7);
+
+    if (candidate.getDay() === 0) continue;
+    if (candidate.getDay() === 6 && saturdayNumber % 2 === 0) continue;
+
+    return candidate.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  return "the next working day";
+}
+
+function getCoverageDetail(item: RoutineItem) {
+  if (!isCoverageRoutineItem(item)) return "";
+
+  const pendingCount = Math.max(0, item.planned_count - item.completed_count);
+  const unitLabel = pendingCount === 1 ? "task" : "tasks";
+
+  return `Open for pickup until end of ${formatShortDate(
+    item.work_date
+  )}. If nobody picks it up, ${pendingCount} ${unitLabel} will move to ${
+    item.person_name
+  } on ${getNextWorkingDateLabel(item.work_date)}.`;
 }
 
 function isTrackedRole(role: string) {
@@ -109,6 +163,15 @@ function isHighlightedPerson(item: RoutineItem, highlightedPersonName?: string) 
   );
 }
 
+function isHighlightedName(personName: string, highlightedPersonName?: string) {
+  if (!highlightedPersonName) return false;
+
+  return (
+    personName.trim().toLowerCase() ===
+    highlightedPersonName.trim().toLowerCase()
+  );
+}
+
 function extractOriginalRoutineItemId(note?: string | null) {
   if (!note) return null;
 
@@ -124,9 +187,7 @@ export function WeeklyRoutineTracker({
   members,
   highlightedPersonName,
 }: WeeklyRoutineTrackerProps) {
-  const weekStartDate =
-    [...items].sort((a, b) => a.work_date.localeCompare(b.work_date))[0]?.work_date ??
-    "2026-05-01";
+  const weekStartDate = "2026-05-01";
   const groupedByWeek = new Map<number, RoutineItem[]>();
 
   for (const item of items) {
@@ -278,9 +339,96 @@ export function WeeklyRoutineTracker({
       return a.family.localeCompare(b.family);
     });
 
+  const employeeWeeklyMap = new Map<string, EmployeeWeekSummary>();
+  const employeeTrackedRoles = new Set(["writer", "designer", "editor"]);
+
+  for (const item of items) {
+    if (!employeeTrackedRoles.has(item.role)) continue;
+
+    const key = item.team_member_id;
+    const week = getWeekNumber(item.work_date, weekStartDate);
+    const current: EmployeeWeekSummary = employeeWeeklyMap.get(key) ?? {
+      key,
+      personName: item.person_name,
+      role: item.role,
+      pod: item.pod,
+      daysByWeek: {},
+      totalPlanned: 0,
+      totalDone: 0,
+    };
+
+    current.totalPlanned += item.planned_count;
+    current.totalDone += item.completed_count;
+
+    const displayWeek = week <= 3 ? week : 4;
+    current.daysByWeek[displayWeek] = current.daysByWeek[displayWeek] ?? {};
+    current.daysByWeek[displayWeek][item.work_date] = current.daysByWeek[displayWeek][
+      item.work_date
+    ] ?? { planned: 0, done: 0 };
+    current.daysByWeek[displayWeek][item.work_date].planned += item.planned_count;
+    current.daysByWeek[displayWeek][item.work_date].done += item.completed_count;
+
+    employeeWeeklyMap.set(key, current);
+  }
+
+  const employeeSummaries = Array.from(employeeWeeklyMap.values()).sort((a, b) => {
+    if (a.role !== b.role) return a.role.localeCompare(b.role);
+    if (a.pod !== b.pod) return a.pod.localeCompare(b.pod);
+    return a.personName.localeCompare(b.personName);
+  });
+
+  function getEmployeeWeekTotal(
+    summary: EmployeeWeekSummary,
+    week: number,
+    key: "planned" | "done"
+  ) {
+    return Object.values(summary.daysByWeek[week] ?? {}).reduce(
+      (sum, day) => sum + day[key],
+      0
+    );
+  }
+
+  function renderEmployeeWeekCell(summary: EmployeeWeekSummary, week: number) {
+    const dayEntries = Object.entries(summary.daysByWeek[week] ?? {}).sort((a, b) =>
+      a[0].localeCompare(b[0])
+    );
+
+    if (dayEntries.length === 0) {
+      return <span className="text-muted">-</span>;
+    }
+
+    return (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+        {dayEntries.map(([dateKey, day]) => (
+          <span
+            key={`${summary.key}-${week}-${dateKey}`}
+            title={`${formatDate(dateKey)}: ${day.done}/${day.planned}`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.25rem",
+              borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--border-soft)",
+              background: "var(--surface-soft)",
+              padding: "0.2rem 0.45rem",
+              whiteSpace: "nowrap",
+              fontSize: "0.75rem",
+              fontWeight: 700,
+            }}
+          >
+            <span style={{ color: "var(--muted)" }}>{getDayInitial(dateKey)}</span>
+            <span>
+              {day.done}/{day.planned}
+            </span>
+          </span>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <section className="space-y-6">
-      <section className="card rounded-2xl p-4">
+    <section className="space-y-6" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      <section className="card rounded-2xl p-4" style={{ order: 3 }}>
         <div className="mb-4">
           <h3 className="font-semibold">Weekly routine tracker</h3>
           <p className="text-sm text-muted">
@@ -421,6 +569,7 @@ export function WeeklyRoutineTracker({
                                         );
                                         const absentReason = getAbsentReason(item);
                                         const coverageNames = getCoverageNames(item);
+                                        const coverageDetail = getCoverageDetail(item);
 
                                         return (
                                           <tr
@@ -482,6 +631,14 @@ export function WeeklyRoutineTracker({
                                             <td className="px-3 py-2">{getStatus(item)}</td>
                                             <td className="px-3 py-2">
                                               <div>{item.notes ?? "-"}</div>
+                                              {coverageDetail ? (
+                                                <div
+                                                  className="mt-1 text-xs"
+                                                  style={{ color: "var(--warning)", fontWeight: 700 }}
+                                                >
+                                                  {coverageDetail}
+                                                </div>
+                                              ) : null}
                                               {coverageNames.length > 0 ? (
                                                 <div
                                                   className="mt-1 text-xs"
@@ -519,7 +676,7 @@ export function WeeklyRoutineTracker({
         </div>
       </section>
 
-      <section className="card rounded-2xl p-4">
+      <section className="card rounded-2xl p-4" style={{ order: 1 }}>
         <div className="mb-4">
           <h3 className="font-semibold">Client weekly tracker</h3>
           <p className="text-sm text-muted">
@@ -647,6 +804,104 @@ export function WeeklyRoutineTracker({
                 <tr>
                   <td className="px-3 py-4 text-muted" colSpan={9}>
                     No client weekly deliverable data yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="card rounded-2xl p-4" style={{ order: 2 }}>
+        <div className="mb-4">
+          <h3 className="font-semibold">Employee weekly workload</h3>
+          <p className="text-sm text-muted">
+            Planned and completed routine task counts for writers, designers, and editors.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1050px] text-left text-sm">
+            <thead style={{ background: "var(--surface-soft)" }}>
+              <tr>
+                <th className="px-3 py-2">Employee</th>
+                <th className="px-3 py-2">Role</th>
+                <th className="px-3 py-2">Pod</th>
+                <th className="px-3 py-2">Total</th>
+                <th className="px-3 py-2">Week 1</th>
+                <th className="px-3 py-2">Week 2</th>
+                <th className="px-3 py-2">Week 3</th>
+                <th className="px-3 py-2">Week 4/5</th>
+              </tr>
+            </thead>
+            <tbody>
+              {employeeSummaries.map((summary) => {
+                const isHighlighted = isHighlightedName(
+                  summary.personName,
+                  highlightedPersonName
+                );
+
+                return (
+                  <tr
+                    key={summary.key}
+                    className="border-t"
+                    style={{
+                      borderColor: "var(--border)",
+                      background: isHighlighted
+                        ? "color-mix(in srgb, var(--primary-glow) 45%, transparent)"
+                        : "transparent",
+                    }}
+                  >
+                    <td
+                      className="px-3 py-2 font-medium"
+                      style={{
+                        color: isHighlighted ? "var(--primary)" : "var(--foreground)",
+                        fontWeight: isHighlighted ? 800 : 600,
+                      }}
+                    >
+                      {summary.personName}
+                    </td>
+                    <td className="px-3 py-2">{summary.role}</td>
+                    <td className="px-3 py-2">{summary.pod}</td>
+                    <td className="px-3 py-2">
+                      {summary.totalDone}/{summary.totalPlanned}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="mb-1 text-xs text-muted">
+                        {getEmployeeWeekTotal(summary, 1, "done")}/
+                        {getEmployeeWeekTotal(summary, 1, "planned")}
+                      </div>
+                      {renderEmployeeWeekCell(summary, 1)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="mb-1 text-xs text-muted">
+                        {getEmployeeWeekTotal(summary, 2, "done")}/
+                        {getEmployeeWeekTotal(summary, 2, "planned")}
+                      </div>
+                      {renderEmployeeWeekCell(summary, 2)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="mb-1 text-xs text-muted">
+                        {getEmployeeWeekTotal(summary, 3, "done")}/
+                        {getEmployeeWeekTotal(summary, 3, "planned")}
+                      </div>
+                      {renderEmployeeWeekCell(summary, 3)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="mb-1 text-xs text-muted">
+                        {getEmployeeWeekTotal(summary, 4, "done")}/
+                        {getEmployeeWeekTotal(summary, 4, "planned")}
+                      </div>
+                      {renderEmployeeWeekCell(summary, 4)}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {employeeSummaries.length === 0 && (
+                <tr>
+                  <td className="px-3 py-4 text-muted" colSpan={8}>
+                    No employee workload data yet.
                   </td>
                 </tr>
               )}

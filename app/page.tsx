@@ -141,7 +141,7 @@ export default function Home() {
 
     loadCurrentMember();
     checkAdmin();
-    loadRoutineBoardData();
+    expireCoverageWindows().then(() => loadRoutineBoardData());
 
     supabase
       .from("clients")
@@ -453,9 +453,9 @@ export default function Home() {
       const date = new Date(2026, 4, day);
       const weekDay = date.getDay();
       const isSunday = weekDay === 0;
-      const isSaturday = weekDay === 6;
+      const isEvenSaturday = weekDay === 6 && Math.ceil(day / 7) % 2 === 0;
 
-      if (isSunday) continue;
+      if (isSunday || isEvenSaturday) continue;
 
       const dateKey = `2026-05-${String(day).padStart(2, "0")}`;
 
@@ -497,6 +497,10 @@ export default function Home() {
     return isSaturday(dateKey) && getSaturdayNumber(dateKey) % 2 === 1;
   }
 
+  function isEvenSaturday(dateKey: string) {
+    return isSaturday(dateKey) && getSaturdayNumber(dateKey) % 2 === 0;
+  }
+
   function getRoleDailyLimit(role: TeamMember["role"]) {
     if (role === "writer") return 6;
     if (role === "designer") return 5;
@@ -519,8 +523,8 @@ export default function Home() {
       return Math.min(availabilityEntry.capacity_override ?? 0, roleLimit);
     }
 
-    if (isOddSaturday(dateKey)) {
-      return Math.min(member.saturday_capacity, roleLimit);
+    if (isSaturday(dateKey)) {
+      return isOddSaturday(dateKey) ? Math.min(member.saturday_capacity, roleLimit) : 0;
     }
 
     return roleLimit;
@@ -540,8 +544,8 @@ export default function Home() {
       return Math.min(availabilityEntry.capacity_override ?? 0, stretchLimit);
     }
 
-    if (isOddSaturday(dateKey)) {
-      return Math.min(member.saturday_capacity, stretchLimit);
+    if (isSaturday(dateKey)) {
+      return isOddSaturday(dateKey) ? Math.min(member.saturday_capacity, stretchLimit) : 0;
     }
 
     return stretchLimit;
@@ -621,8 +625,8 @@ export default function Home() {
     return Boolean(item?.notes?.startsWith("Coverage window"));
   }
 
-  function buildCoverageNote(absentItem: RoutineItem, shiftedItemId: string) {
-    return `Coverage window for ${absentItem.person_name} until end of ${absentItem.work_date} (orig:${shiftedItemId})`;
+  function buildCoverageNote(absentItem: RoutineItem) {
+    return `Coverage window for ${absentItem.person_name} until end of ${absentItem.work_date}`;
   }
 
   function getCoverageSourceId(item: RoutineItem | null) {
@@ -688,6 +692,7 @@ export default function Home() {
         .filter((item) => (item.capacity_override ?? 0) === 0)
         .map((item) => `${item.team_member_id}-${item.unavailable_date}`)
     );
+    const todayKey = getTodayDateKey();
 
     const visibleItems = routineData.filter((item) => {
       const isOwnItem = item.team_member_id === member.id;
@@ -699,7 +704,7 @@ export default function Home() {
       const isAbsentSharedItem = fullyAbsentKeys.has(`${item.team_member_id}-${item.work_date}`);
       const hasPendingWork = item.completed_count < item.planned_count;
       const isOpenTodayCoverage =
-        isCoverageRoutineItem(item) && item.work_date === getTodayDateKey();
+        isCoverageRoutineItem(item) && item.work_date === todayKey;
 
       return isAbsentSharedItem && hasPendingWork && isOpenTodayCoverage;
     });
@@ -888,15 +893,15 @@ export default function Home() {
     }
 
     function getWeekDates(weekNumber: number) {
-      return workDays.filter((dateKey) => getWeekNumber(dateKey, planStartDate) === weekNumber);
+      return workDays.filter((dateKey) => getWeekNumber(dateKey) === weekNumber);
     }
 
     const deliveryWeekCount = 3;
     const deliveryWorkDays = workDays.filter(
-      (dateKey) => getWeekNumber(dateKey, planStartDate) <= deliveryWeekCount
+      (dateKey) => getWeekNumber(dateKey) <= deliveryWeekCount
     );
     const fillerWorkDays = workDays.filter(
-      (dateKey) => getWeekNumber(dateKey, planStartDate) > deliveryWeekCount
+      (dateKey) => getWeekNumber(dateKey) > deliveryWeekCount
     );
 
     function getLeastLoadedDate(member: TeamMember, candidateDates: string[]) {
@@ -2051,7 +2056,119 @@ export default function Home() {
     setCampaignRules(rulesData ?? []);
   }
 
+  async function expireCoverageWindows() {
+    const todayKey = getTodayDateKey();
+
+    const [{ data: planData }, { data: holidayData }] = await Promise.all([
+      supabase
+        .from("routine_plans")
+        .select("id")
+        .eq("month_start", "2026-05-01")
+        .maybeSingle(),
+      supabase.from("holidays").select("*").order("holiday_date"),
+    ]);
+
+    if (!planData) return false;
+
+    const { data: coverageItems, error } = await supabase
+      .from("routine_items")
+      .select("*")
+      .eq("plan_id", planData.id)
+      .lt("work_date", todayKey)
+      .like("notes", "Coverage window%");
+
+    if (error) {
+      alert(error.message);
+      return false;
+    }
+
+    const expiredItems = (coverageItems ?? []).filter(
+      (item) => item.completed_count < item.planned_count
+    );
+
+    if (expiredItems.length === 0) return false;
+
+    const holidayKeys = new Set((holidayData ?? []).map((item) => item.holiday_date));
+
+    function getNextWorkDate(dateKey: string) {
+      const startDay = Number(dateKey.slice(-2)) + 1;
+
+      for (let day = startDay; day <= 31; day++) {
+        const date = new Date(2026, 4, day);
+        const isSunday = date.getDay() === 0;
+        const isEvenSaturday = date.getDay() === 6 && Math.ceil(day / 7) % 2 === 0;
+
+        if (isSunday || isEvenSaturday) continue;
+
+        const candidate = `2026-05-${String(day).padStart(2, "0")}`;
+        if (!holidayKeys.has(candidate)) return candidate;
+      }
+
+      return "";
+    }
+
+    const carryForwardItems: Omit<RoutineItem, "id">[] = [];
+    const itemsToClose: RoutineItem[] = [];
+
+    for (const item of expiredItems) {
+      const pendingCount = Math.max(0, item.planned_count - item.completed_count);
+      const alreadyShiftedItemId = getCoverageSourceId(item);
+
+      if (pendingCount > 0 && !alreadyShiftedItemId) {
+        const nextWorkDate = getNextWorkDate(item.work_date);
+
+        if (nextWorkDate) {
+          carryForwardItems.push({
+            plan_id: item.plan_id,
+            work_date: nextWorkDate,
+            team_member_id: item.team_member_id,
+            person_name: item.person_name,
+            role: item.role,
+            pod: item.pod,
+            client_name: item.client_name,
+            campaign_type: item.campaign_type,
+            output_type: item.output_type,
+            planned_count: pendingCount,
+            completed_count: 0,
+            carried_from: item.work_date,
+            is_unplanned: false,
+            notes: `Carried forward from leave on ${item.work_date}`,
+          });
+        }
+      }
+
+      itemsToClose.push(item);
+    }
+
+    if (carryForwardItems.length > 0) {
+      const { error: insertError } = await supabase
+        .from("routine_items")
+        .insert(carryForwardItems);
+
+      if (insertError) {
+        alert(insertError.message);
+        return false;
+      }
+    }
+
+    for (const item of itemsToClose) {
+      const { error: updateError } = await supabase
+        .from("routine_items")
+        .update({ planned_count: item.completed_count })
+        .eq("id", item.id);
+
+      if (updateError) {
+        alert(updateError.message);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   async function rebalanceRoutinePlan() {
+    await expireCoverageWindows();
+
     const { data: freshAvailability, error } = await supabase
       .from("member_availability")
       .select("*")
@@ -2108,8 +2225,15 @@ export default function Home() {
     }
 
     const futureItems = latestRoutineItems ?? [];
+    const legacyShiftedCoverageIds = new Set(
+      futureItems
+        .map((item) => getCoverageSourceId(item))
+        .filter((id): id is string => Boolean(id))
+    );
     const preservedItems = futureItems.filter((item) => item.completed_count > 0);
-    const itemsToRebuild = futureItems.filter((item) => item.completed_count === 0);
+    const itemsToRebuild = futureItems.filter(
+      (item) => item.completed_count === 0 && !legacyShiftedCoverageIds.has(item.id)
+    );
 
     const remainingWork = itemsToRebuild
       .map((item) => ({
@@ -2144,11 +2268,7 @@ export default function Home() {
       usage.set(`${item.team_member_id}-${item.work_date}`, item.planned_count);
     }
 
-    type RebuiltRoutineItem = Omit<RoutineItem, "id"> & {
-      coverageSource?: RoutineItem;
-    };
-
-    const rebuilt: RebuiltRoutineItem[] = [];
+    const rebuilt: Omit<RoutineItem, "id">[] = [];
 
     function used(memberId: string, dateKey: string) {
       return usage.get(`${memberId}-${dateKey}`) ?? 0;
@@ -2166,8 +2286,7 @@ export default function Home() {
       outputType: string,
       count: number,
       notes?: string,
-      podOverride?: string,
-      coverageSource?: RoutineItem
+      podOverride?: string
     ) {
       rebuilt.push({
         plan_id: plan.id,
@@ -2184,7 +2303,6 @@ export default function Home() {
         carried_from: fromDate,
         is_unplanned: false,
         notes: notes ?? null,
-        coverageSource,
       });
 
       addUsage(member.id, dateKey, count);
@@ -2218,6 +2336,26 @@ export default function Home() {
 
     for (const workItem of remainingWork) {
       let remaining = workItem.planned_count;
+
+      if (
+        isFullyAbsent(
+          workItem.originalItem.team_member_id,
+          workItem.originalItem.work_date,
+          availabilityEntries
+        )
+      ) {
+        addRoutine(
+          workItem.originalMember as TeamMember,
+          workItem.originalItem.work_date,
+          workItem.client_name,
+          workItem.campaign_type,
+          workItem.output_type,
+          remaining,
+          buildCoverageNote(workItem.originalItem)
+        );
+        continue;
+      }
+
       const candidates = getRebalanceCandidates(workItem);
 
       for (const dateKey of workDays) {
@@ -2238,15 +2376,7 @@ export default function Home() {
             workItem.campaign_type,
             workItem.output_type,
             count,
-            workItem.notes,
-            undefined,
-            isFullyAbsent(
-              workItem.originalItem.team_member_id,
-              workItem.originalItem.work_date,
-              availabilityEntries
-            )
-              ? workItem.originalItem
-              : undefined
+            workItem.notes
           );
           remaining -= count;
         }
@@ -2254,52 +2384,13 @@ export default function Home() {
     }
 
     if (rebuilt.length > 0) {
-      const insertable = rebuilt.map(({ coverageSource, ...item }) => item);
-      const { data: insertedItems, error } = await supabase
+      const { error } = await supabase
         .from("routine_items")
-        .insert(insertable)
-        .select("*");
+        .insert(rebuilt);
 
       if (error) {
         alert(error.message);
         return;
-      }
-
-      const coverageItems: Omit<RoutineItem, "id">[] = [];
-
-      for (let index = 0; index < rebuilt.length; index++) {
-        const coverageSource = rebuilt[index].coverageSource;
-        const shiftedItem = insertedItems?.[index];
-
-        if (!coverageSource || !shiftedItem) continue;
-
-        coverageItems.push({
-          plan_id: plan.id,
-          work_date: coverageSource.work_date,
-          team_member_id: coverageSource.team_member_id,
-          person_name: coverageSource.person_name,
-          role: coverageSource.role,
-          pod: coverageSource.pod,
-          client_name: coverageSource.client_name,
-          campaign_type: coverageSource.campaign_type,
-          output_type: coverageSource.output_type,
-          planned_count: shiftedItem.planned_count,
-          completed_count: 0,
-          carried_from: coverageSource.work_date,
-          is_unplanned: false,
-          notes: buildCoverageNote(coverageSource, shiftedItem.id),
-        });
-      }
-
-      if (coverageItems.length > 0) {
-        const { error: coverageInsertError } = await supabase
-          .from("routine_items")
-          .insert(coverageItems);
-
-        if (coverageInsertError) {
-          alert(coverageInsertError.message);
-          return;
-        }
       }
     }
 
@@ -2733,6 +2824,7 @@ export default function Home() {
             categories={categories}
             admins={admins}
             logs={adminLogs}
+            highlightedPersonName={currentMember?.name}
             newClient={newClient}
             newCategory={newCategory}
             newAdminEmail={newAdminEmail}

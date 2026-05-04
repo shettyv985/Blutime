@@ -29,6 +29,7 @@ type AdminPanelProps = {
   categories: Category[];
   admins: AdminUser[];
   logs: AdminLog[];
+  highlightedPersonName?: string;
   newClient: string;
   newCategory: string;
   newAdminEmail: string;
@@ -211,6 +212,7 @@ export function AdminPanel({
   categories,
   admins,
   logs,
+  highlightedPersonName,
   newClient,
   newCategory,
   newAdminEmail,
@@ -504,6 +506,7 @@ export function AdminPanel({
               availability={availability}
               logs={logs}
               members={members}
+              highlightedPersonName={highlightedPersonName}
             />
           </div>
         )}

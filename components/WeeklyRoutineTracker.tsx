@@ -7,6 +7,7 @@ type WeeklyRoutineTrackerProps = {
   logs: TimeLog[];
   members: TeamMember[];
   highlightedPersonName?: string;
+  visibleSections?: ("routine" | "employee" | "client")[];
 };
 
 type CampaignFamily = "social_media" | "performance";
@@ -186,8 +187,12 @@ export function WeeklyRoutineTracker({
   logs,
   members,
   highlightedPersonName,
+  visibleSections = ["routine", "employee", "client"],
 }: WeeklyRoutineTrackerProps) {
   const weekStartDate = "2026-05-01";
+  const showRoutineSection = visibleSections.includes("routine");
+  const showEmployeeSection = visibleSections.includes("employee");
+  const showClientSection = visibleSections.includes("client");
   const groupedByWeek = new Map<number, RoutineItem[]>();
 
   for (const item of items) {
@@ -428,6 +433,7 @@ export function WeeklyRoutineTracker({
 
   return (
     <section className="space-y-6" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      {showRoutineSection ? (
       <section className="card rounded-2xl p-4" style={{ order: 3 }}>
         <div className="mb-4">
           <h3 className="font-semibold">Weekly routine tracker</h3>
@@ -675,7 +681,9 @@ export function WeeklyRoutineTracker({
           })}
         </div>
       </section>
+      ) : null}
 
+      {showClientSection ? (
       <section className="card rounded-2xl p-4" style={{ order: 1 }}>
         <div className="mb-4">
           <h3 className="font-semibold">Client weekly tracker</h3>
@@ -811,7 +819,9 @@ export function WeeklyRoutineTracker({
           </table>
         </div>
       </section>
+      ) : null}
 
+      {showEmployeeSection ? (
       <section className="card rounded-2xl p-4" style={{ order: 2 }}>
         <div className="mb-4">
           <h3 className="font-semibold">Employee weekly workload</h3>
@@ -909,6 +919,7 @@ export function WeeklyRoutineTracker({
           </table>
         </div>
       </section>
+      ) : null}
     </section>
   );
 }

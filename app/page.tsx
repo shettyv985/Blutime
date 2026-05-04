@@ -43,7 +43,9 @@ export default function Home() {
   const [clients, setClients] = useState<Client[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [logs, setLogs] = useState<TimeLog[]>([]);
-  const [showRoutineBoard, setShowRoutineBoard] = useState(false);
+  const [employeeRoutineView, setEmployeeRoutineView] = useState<
+    "routine" | "my_weekly" | "client_weekly"
+  >("routine");
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminLogs, setAdminLogs] = useState<AdminLog[]>([]);
@@ -2465,6 +2467,10 @@ export default function Home() {
       ? `${selectedClientName} is not part of the routine currently being shown for this category. You can still continue as unplanned work.`
       : sharedRoutineNotice;
 
+  const currentMemberWeeklyItems = currentMember
+    ? routineItems.filter((item) => item.team_member_id === currentMember.id)
+    : [];
+
   function startTimer() {
     const client = clients.find((item) => item.id === clientId);
     if (!client || !canStart) return;
@@ -2750,39 +2756,86 @@ export default function Home() {
           <div className="card rounded-2xl p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="font-semibold">Routine board</h3>
+                <h3 className="font-semibold">Routine trackers</h3>
                 <p className="mt-1 text-sm text-muted">
-                  View the weekly routine grouped pod-wise across the team.
+                  Switch between the full routine, your weekly workload, and client progress.
                 </p>
               </div>
 
-              <button
-                onClick={() => setShowRoutineBoard((current) => !current)}
-                className="rounded-xl px-4 py-2 text-sm font-semibold"
+              <div
+                className="flex flex-wrap gap-2"
                 style={{
-                  border: "1px solid var(--border)",
-                  background: showRoutineBoard ? "var(--primary)" : "var(--surface-soft)",
-                  color: showRoutineBoard ? "white" : "var(--foreground)",
+                  borderRadius: "var(--radius-lg)",
                 }}
               >
-                {showRoutineBoard ? "Hide routine" : "Routine"}
-              </button>
+                {[
+                  { id: "routine", label: "Routine" },
+                  { id: "my_weekly", label: "My weekly tracker" },
+                  { id: "client_weekly", label: "Client weekly tracker" },
+                ].map((view) => {
+                  const isActive = employeeRoutineView === view.id;
+
+                  return (
+                    <button
+                      key={view.id}
+                      onClick={() =>
+                        setEmployeeRoutineView(
+                          view.id as "routine" | "my_weekly" | "client_weekly"
+                        )
+                      }
+                      className="rounded-xl px-4 py-2 text-sm font-semibold"
+                      style={{
+                        border: "1px solid var(--border)",
+                        background: isActive ? "var(--primary)" : "var(--surface-soft)",
+                        color: isActive ? "white" : "var(--foreground)",
+                      }}
+                    >
+                      {view.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </section>
 
-        {showRoutineBoard && (
-          <section className="mt-4">
-            <WeeklyRoutineTracker
-              items={routineItems}
-              campaignRules={campaignRules}
-              availability={availability}
-              logs={adminLogs.length > 0 ? adminLogs : logs}
-              members={members}
-              highlightedPersonName={currentMember?.name}
-            />
-          </section>
-        )}
+        <section className="mt-4">
+          {employeeRoutineView === "routine" ? (
+          <WeeklyRoutineTracker
+            items={routineItems}
+            campaignRules={campaignRules}
+            availability={availability}
+            logs={adminLogs.length > 0 ? adminLogs : logs}
+            members={members}
+            highlightedPersonName={currentMember?.name}
+            visibleSections={["routine"]}
+          />
+          ) : null}
+
+          {employeeRoutineView === "my_weekly" ? (
+          <WeeklyRoutineTracker
+            items={currentMemberWeeklyItems}
+            campaignRules={campaignRules}
+            availability={availability}
+            logs={adminLogs.length > 0 ? adminLogs : logs}
+            members={members}
+            highlightedPersonName={currentMember?.name}
+            visibleSections={["employee"]}
+          />
+          ) : null}
+
+          {employeeRoutineView === "client_weekly" ? (
+          <WeeklyRoutineTracker
+            items={routineItems}
+            campaignRules={campaignRules}
+            availability={availability}
+            logs={adminLogs.length > 0 ? adminLogs : logs}
+            members={members}
+            highlightedPersonName={currentMember?.name}
+            visibleSections={["client"]}
+          />
+          ) : null}
+        </section>
 
         <section className="mt-6">
           <div className="mb-3 flex flex-col gap-1">

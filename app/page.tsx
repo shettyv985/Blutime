@@ -1332,11 +1332,12 @@ export default function Home() {
           rule.campaign_type,
           rem.outputType,
           rem.designRemaining,
-          deliveryWorkDays,
+          workDays,
           undefined,
           rule.pod,
           true
         );
+        rem.designRemaining = 0;
       }
 
       if (writers.length > 0 && rem.writerRemaining > 0) {
@@ -1346,11 +1347,12 @@ export default function Home() {
           rule.campaign_type,
           "copy/script",
           rem.writerRemaining,
-          deliveryWorkDays,
+          workDays,
           undefined,
           rule.pod,
           true
         );
+        rem.writerRemaining = 0;
       }
 
       if (editors.length > 0 && rem.aiVideoRemaining > 0) {
@@ -1360,11 +1362,12 @@ export default function Home() {
           rule.campaign_type,
           "video",
           rem.aiVideoRemaining,
-          deliveryWorkDays,
+          workDays,
           undefined,
           rule.pod,
           true
         );
+        rem.aiVideoRemaining = 0;
       }
 
       if (production && editors.length > 0 && rem.shootVideoRemaining > 0) {
@@ -1374,13 +1377,13 @@ export default function Home() {
           rule.campaign_type,
           "shoot",
           rem.shootVideoRemaining,
-          deliveryWorkDays,
+          workDays,
           undefined,
           true
         );
         const shootCount = shootAllocations.reduce((s, a) => s + a.count, 0);
         if (shootCount > 0) {
-          const allowedEditorDates = deliveryWorkDays.filter((d) =>
+          const allowedEditorDates = workDays.filter((d) =>
             shootAllocations.some((a) => a.dateKey <= d)
           );
           distributeBalancedAcrossMembers(
@@ -1394,8 +1397,11 @@ export default function Home() {
             rule.pod,
             true
           );
+          rem.shootVideoRemaining = Math.max(0, rem.shootVideoRemaining - shootCount);
         }
       }
+
+      ruleRemaining.set(rule.id, rem);
     }
 
     // ─── STEP 5: Fill remaining capacity with Creative Testing ───
@@ -1405,7 +1411,10 @@ export default function Home() {
         if (!rem) return null;
 
         const unmetCount =
-          rem.designRemaining + rem.aiVideoRemaining + rem.shootVideoRemaining;
+          rem.designRemaining +
+          rem.writerRemaining +
+          rem.aiVideoRemaining +
+          rem.shootVideoRemaining;
 
         if (unmetCount <= 0) return null;
 

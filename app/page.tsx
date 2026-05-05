@@ -2084,9 +2084,7 @@ export default function Home() {
       return false;
     }
 
-    const expiredItems = (coverageItems ?? []).filter(
-      (item) => item.completed_count < item.planned_count
-    );
+    const expiredItems = coverageItems ?? [];
 
     if (expiredItems.length === 0) return false;
 
@@ -2110,7 +2108,7 @@ export default function Home() {
     }
 
     const carryForwardItems: Omit<RoutineItem, "id">[] = [];
-    const itemsToClose: RoutineItem[] = [];
+    const itemsToDelete: RoutineItem[] = [];
 
     for (const item of expiredItems) {
       const pendingCount = Math.max(0, item.planned_count - item.completed_count);
@@ -2139,7 +2137,7 @@ export default function Home() {
         }
       }
 
-      itemsToClose.push(item);
+      itemsToDelete.push(item);
     }
 
     if (carryForwardItems.length > 0) {
@@ -2153,14 +2151,14 @@ export default function Home() {
       }
     }
 
-    for (const item of itemsToClose) {
-      const { error: updateError } = await supabase
+    for (const item of itemsToDelete) {
+      const { error: deleteError } = await supabase
         .from("routine_items")
-        .update({ planned_count: item.completed_count })
+        .delete()
         .eq("id", item.id);
 
-      if (updateError) {
-        alert(updateError.message);
+      if (deleteError) {
+        alert(deleteError.message);
         return false;
       }
     }

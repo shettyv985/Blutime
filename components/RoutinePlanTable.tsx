@@ -2,7 +2,6 @@ import type { RoutineItem } from "../types";
 
 type RoutinePlanTableProps = {
   items: RoutineItem[];
-  onMoveItemDate?: (item: RoutineItem, date: string) => void;
 };
 
 function formatDate(date: string) {
@@ -25,7 +24,7 @@ const statusConfig = {
   pending:  { label: "Pending",     badge: "badge-primary" },
 };
 
-export function RoutinePlanTable({ items, onMoveItemDate }: RoutinePlanTableProps) {
+export function RoutinePlanTable({ items }: RoutinePlanTableProps) {
   const sortedItems = [...items].sort((a, b) => {
     if (a.work_date !== b.work_date) return a.work_date.localeCompare(b.work_date);
     if (a.person_name !== b.person_name) return a.person_name.localeCompare(b.person_name);
@@ -35,36 +34,6 @@ export function RoutinePlanTable({ items, onMoveItemDate }: RoutinePlanTableProp
   const doneCount     = items.filter((i) => i.completed_count >= i.planned_count).length;
   const progressCount = items.filter((i) => i.completed_count > 0 && i.completed_count < i.planned_count).length;
   const pendingCount  = items.length - doneCount - progressCount;
-  const itemById = new Map(items.map((item) => [item.id, item]));
-
-  function handleDragStart(event: React.DragEvent<HTMLTableRowElement>, item: RoutineItem) {
-    event.dataTransfer.setData("text/plain", item.id);
-    event.dataTransfer.effectAllowed = "move";
-  }
-
-  function handleDragOver(event: React.DragEvent) {
-    if (!onMoveItemDate) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-  }
-
-  function handleDrop(event: React.DragEvent, date: string) {
-    if (!onMoveItemDate) return;
-
-    event.preventDefault();
-    const itemId = event.dataTransfer.getData("text/plain");
-    const item = itemById.get(itemId);
-
-    if (!item || item.work_date === date) return;
-    onMoveItemDate(item, date);
-  }
-
-  function getTodayDateKey() {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
-      today.getDate()
-    ).padStart(2, "0")}`;
-  }
 
   return (
     <section className="card" style={{ borderRadius: "var(--radius-xl)", overflow: "hidden" }}>
@@ -89,23 +58,6 @@ export function RoutinePlanTable({ items, onMoveItemDate }: RoutinePlanTableProp
             <span className="badge badge-success">{doneCount} done</span>
             <span className="badge badge-warning">{progressCount} in progress</span>
             <span className="badge badge-primary">{pendingCount} pending</span>
-            {onMoveItemDate ? (
-              <button
-                onDragOver={handleDragOver}
-                onDrop={(event) => handleDrop(event, getTodayDateKey())}
-                style={{
-                  border: "1px dashed var(--primary)",
-                  borderRadius: "var(--radius-sm)",
-                  background: "var(--primary-glow)",
-                  color: "var(--primary)",
-                  fontSize: "0.76rem",
-                  fontWeight: 800,
-                  padding: "0.35rem 0.65rem",
-                }}
-              >
-                Drop to today
-              </button>
-            ) : null}
           </div>
         )}
       </div>
@@ -129,36 +81,9 @@ export function RoutinePlanTable({ items, onMoveItemDate }: RoutinePlanTableProp
               const status = getStatus(item);
               const pct = Math.min(100, (item.completed_count / item.planned_count) * 100);
               return (
-                <tr
-                  key={item.id}
-                  draggable={Boolean(onMoveItemDate && item.completed_count < item.planned_count)}
-                  onDragStart={(event) => handleDragStart(event, item)}
-                  style={{
-                    cursor:
-                      onMoveItemDate && item.completed_count < item.planned_count
-                        ? "grab"
-                        : "default",
-                  }}
-                >
-                  <td
-                    onDragOver={handleDragOver}
-                    onDrop={(event) => handleDrop(event, item.work_date)}
-                    style={{
-                      whiteSpace: "nowrap",
-                      fontWeight: 600,
-                      fontSize: "0.78rem",
-                    }}
-                    title="Drop another routine item here to move it to this date"
-                  >
-                    <span
-                      style={{
-                        borderRadius: "var(--radius-xs)",
-                        border: onMoveItemDate ? "1px dashed var(--border)" : "none",
-                        padding: onMoveItemDate ? "0.15rem 0.4rem" : 0,
-                      }}
-                    >
-                      {formatDate(item.work_date)}
-                    </span>
+                <tr key={item.id}>
+                  <td style={{ whiteSpace: "nowrap", fontWeight: 600, fontSize: "0.78rem" }}>
+                    <span>{formatDate(item.work_date)}</span>
                   </td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     <p style={{ fontWeight: 600, margin: 0, fontSize: "0.855rem" }}>{item.person_name}</p>

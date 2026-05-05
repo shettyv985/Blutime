@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
 import { ActiveTimerCard } from "../components/ActiveTimerCard";
 import { AdminPanel } from "../components/AdminPanel";
 import { AuthCard } from "../components/AuthCard";
@@ -1196,15 +1196,17 @@ export default function Home() {
 
     // Helper: get assigned members for a rule by role
     function getAssignedMembers(rule: CampaignRule, role: TeamMember["role"]) {
-      return activeMembers.filter(
+      const sameRoleMembers = activeMembers.filter((m) => m.role === role);
+      const assignedMembers = sameRoleMembers.filter(
         (m) =>
-          m.role === role &&
           assignments.some(
             (a) =>
               a.team_member_id === m.id &&
               clientNamesMatch(a.client_name, rule.client_name)
           )
       );
+
+      return assignedMembers.length > 0 ? assignedMembers : sameRoleMembers;
     }
 
     // ─── STEP 3: PASS 1 — Week-by-week, give every client their weekly minimum first ───
@@ -1397,6 +1399,31 @@ export default function Home() {
     }
 
     // ─── STEP 5: Fill remaining capacity with Creative Testing ───
+    const unmetDeliverables = campaignRules
+      .map((rule) => {
+        const rem = ruleRemaining.get(rule.id);
+        if (!rem) return null;
+
+        const unmetCount =
+          rem.designRemaining + rem.aiVideoRemaining + rem.shootVideoRemaining;
+
+        if (unmetCount <= 0) return null;
+
+        return `${rule.client_name} (${rule.campaign_type}) - ${unmetCount} deliverable${
+          unmetCount === 1 ? "" : "s"
+        }`;
+      })
+      .filter((item): item is string => Boolean(item));
+
+    if (unmetDeliverables.length > 0) {
+      alert(
+        `Routine generation could not fully meet these deliverables:\n${unmetDeliverables.join(
+          "\n"
+        )}`
+      );
+      return;
+    }
+
     addCreativeTestingFillers();
 
     if (generated.length === 0) {
@@ -2194,33 +2221,6 @@ export default function Home() {
     await rebalancePendingRoutinePlan(rebalanceFromDate, nextAvailability, true);
   }
 
-  async function moveRoutineItemDate(item: RoutineItem, date: string) {
-    if (item.completed_count >= item.planned_count) {
-      alert("Completed routine items cannot be moved.");
-      return;
-    }
-
-    const { error } = await supabase
-      .from("routine_items")
-      .update({ work_date: date })
-      .eq("id", item.id);
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    await loadRoutineBoardData();
-
-    if (currentMember) {
-      await loadMemberRoutineItems(currentMember);
-    }
-
-    if (isAdmin) {
-      await loadAdminData();
-    }
-  }
-
   async function rebalancePendingRoutinePlan(
     fromDate: string,
     availabilityEntries = availability,
@@ -2753,7 +2753,11 @@ export default function Home() {
       <Header
         email={user.email}
         theme={theme}
-        onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+        onToggleTheme={() =>
+          startTransition(() => {
+            setTheme((current) => (current === "dark" ? "light" : "dark"));
+          })
+        }
         onSignOut={signOut}
       />
 
@@ -2955,7 +2959,6 @@ export default function Home() {
             onUpdateMemberEmail={updateMemberEmail}
             routineItems={routineItems}
             onGenerateRoutinePlan={generateMay2026RoutinePlan}
-            onMoveRoutineItemDate={moveRoutineItemDate}
             holidays={holidays}
             availability={availability}
             newHolidayDate={newHolidayDate}

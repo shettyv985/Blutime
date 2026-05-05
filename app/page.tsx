@@ -907,7 +907,7 @@ export default function Home() {
     );
 
     function getLeastLoadedDate(member: TeamMember, candidateDates: string[]) {
-      return [...candidateDates]
+      const availableDate = [...candidateDates]
         .filter((dateKey) => used(member.id, dateKey) < getStretchCapacity(member, dateKey))
         .sort((a, b) => {
           const aOverload = used(member.id, a) - getPlannableCapacity(member, a);
@@ -916,6 +916,16 @@ export default function Home() {
           if (aOverload !== bOverload) return aOverload - bOverload;
           return a.localeCompare(b);
         })[0];
+
+      if (availableDate) return availableDate;
+
+      return [...candidateDates].sort((a, b) => {
+        const aLoad = used(member.id, a);
+        const bLoad = used(member.id, b);
+
+        if (aLoad !== bLoad) return aLoad - bLoad;
+        return a.localeCompare(b);
+      })[0];
     }
 
     // Allocate exactly 1 unit on the first available date from candidateDates
@@ -2184,6 +2194,33 @@ export default function Home() {
     await rebalancePendingRoutinePlan(rebalanceFromDate, nextAvailability, true);
   }
 
+  async function moveRoutineItemDate(item: RoutineItem, date: string) {
+    if (item.completed_count >= item.planned_count) {
+      alert("Completed routine items cannot be moved.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("routine_items")
+      .update({ work_date: date })
+      .eq("id", item.id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    await loadRoutineBoardData();
+
+    if (currentMember) {
+      await loadMemberRoutineItems(currentMember);
+    }
+
+    if (isAdmin) {
+      await loadAdminData();
+    }
+  }
+
   async function rebalancePendingRoutinePlan(
     fromDate: string,
     availabilityEntries = availability,
@@ -2918,6 +2955,7 @@ export default function Home() {
             onUpdateMemberEmail={updateMemberEmail}
             routineItems={routineItems}
             onGenerateRoutinePlan={generateMay2026RoutinePlan}
+            onMoveRoutineItemDate={moveRoutineItemDate}
             holidays={holidays}
             availability={availability}
             newHolidayDate={newHolidayDate}

@@ -72,6 +72,7 @@ type AdminPanelProps = {
   onUpdateMemberSaturdayCapacity: (member: TeamMember, value: number) => void;
   routineItems: RoutineItem[];
   onGenerateRoutinePlan: () => void;
+  onMoveRoutineItemDate: (item: RoutineItem, date: string) => void;
   holidays: Holiday[];
   availability: MemberAvailability[];
   newHolidayDate: string;
@@ -255,6 +256,7 @@ export function AdminPanel({
   onUpdateMemberSaturdayCapacity,
   routineItems,
   onGenerateRoutinePlan,
+  onMoveRoutineItemDate,
   holidays,
   availability,
   newHolidayDate,
@@ -513,7 +515,7 @@ export function AdminPanel({
 
         {/* ROUTINE */}
         {activeTab === "routine" && (
-          <RoutinePlanTable items={routineItems} />
+          <RoutinePlanTable items={routineItems} onMoveItemDate={onMoveRoutineItemDate} />
         )}
 
         {/* MEMBERS */}

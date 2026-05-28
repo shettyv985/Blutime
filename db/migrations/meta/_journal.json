@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1778821507436,
+      "tag": "0000_wide_gunslinger",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1778829617220,
+      "tag": "0001_flippant_sunfire",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1778922545125,
+      "tag": "0002_dizzy_skrulls",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1778926302277,
+      "tag": "0003_exotic_mystique",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1779040841947,
+      "tag": "0004_tranquil_lizard",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1779905763006,
+      "tag": "0005_ai_master_brain",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1779966998784,
+      "tag": "0006_ai_file_sources",
+      "breakpoints": true
+    }
+  ]
+}

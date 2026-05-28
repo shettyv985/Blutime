@@ -95,7 +95,7 @@ export function AuthCard({
               margin: 0,
             }}
           >
-            It's <span style={{ color: "var(--primary)" }}>BluTime</span>
+            It&apos;s <span style={{ color: "var(--primary)" }}>BluTime</span>
           </h1>
           <p
             style={{

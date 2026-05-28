@@ -6,6 +6,7 @@ type LinkifiedTextProps = {
 };
 
 const urlPattern = /(https?:\/\/[^\s]+)/g;
+const exactUrlPattern = /^https?:\/\/[^\s]+$/;
 
 export function LinkifiedText({
   text,
@@ -22,7 +23,7 @@ export function LinkifiedText({
   return (
     <span className={className} style={style}>
       {parts.map((part, index) => {
-        if (urlPattern.test(part)) {
+        if (exactUrlPattern.test(part)) {
           return (
             <a
               key={`${part}-${index}`}

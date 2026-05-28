@@ -1,0 +1,641 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+
+type SheetSource = {
+  id: string;
+  name: string;
+  sheetUrl: string;
+  spreadsheetId: string;
+  updatedAt: string;
+};
+
+type FileSource = {
+  id: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  createdAt: string;
+};
+
+type AiSheetSummary = {
+  title: string;
+  spreadsheetId: string;
+  tabs: Array<{ title: string; rows: number; includedRows: number; truncated: boolean }>;
+};
+
+type AiFileSummary = {
+  id: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  hasExtractedText: boolean;
+};
+
+type AiResult = {
+  provider: "manus" | "openai";
+  mode?: "async" | "sync";
+  answer?: string;
+  taskId?: string;
+  taskUrl?: string;
+  status?: string;
+  statusText?: string;
+  sheets?: AiSheetSummary[];
+  files?: AiFileSummary[];
+};
+
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  status?: string;
+  sheets?: AiSheetSummary[];
+  files?: AiFileSummary[];
+};
+
+const maxFileBytes = 5 * 1024 * 1024;
+
+function createLocalId() {
+  return crypto.randomUUID();
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function conversationToText(messages: ChatMessage[]) {
+  return messages
+    .slice(-10)
+    .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+    .join("\n\n");
+}
+
+export function AiMasterBrainPanel() {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [sources, setSources] = useState<SheetSource[]>([]);
+  const [files, setFiles] = useState<FileSource[]>([]);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
+  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
+  const [attachedLinks, setAttachedLinks] = useState<string[]>([]);
+  const [sourceName, setSourceName] = useState("");
+  const [sheetUrl, setSheetUrl] = useState("");
+  const [linkDraft, setLinkDraft] = useState("");
+  const [provider, setProvider] = useState<"manus" | "openai">("manus");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [includeContextOnNextMessage, setIncludeContextOnNextMessage] = useState(true);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [activeTaskUrl, setActiveTaskUrl] = useState<string | null>(null);
+  const [pendingAssistantId, setPendingAssistantId] = useState<string | null>(null);
+  const [loadingSources, setLoadingSources] = useState(true);
+  const [loadingFiles, setLoadingFiles] = useState(true);
+  const [savingSource, setSavingSource] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [error, setError] = useState("");
+
+  const selectedContextCount = selectedSourceIds.length + selectedFileIds.length + attachedLinks.length;
+  const canSend = draft.trim().length >= 2 && !asking && !pendingAssistantId;
+
+  async function loadSources() {
+    setLoadingSources(true);
+    const response = await fetch("/api/admin/ai/sources");
+    const payload = (await response.json().catch(() => null)) as { sources?: SheetSource[]; error?: string } | null;
+    setLoadingSources(false);
+
+    if (!response.ok || !payload) {
+      setError(payload?.error ?? "Could not load sheet sources.");
+      return;
+    }
+
+    setSources(payload.sources ?? []);
+    setSelectedSourceIds((current) => current.filter((id) => payload.sources?.some((source) => source.id === id)));
+  }
+
+  async function loadFiles() {
+    setLoadingFiles(true);
+    const response = await fetch("/api/admin/ai/files");
+    const payload = (await response.json().catch(() => null)) as { files?: FileSource[]; error?: string } | null;
+    setLoadingFiles(false);
+
+    if (!response.ok || !payload) {
+      setError(payload?.error ?? "Could not load files.");
+      return;
+    }
+
+    setFiles(payload.files ?? []);
+    setSelectedFileIds((current) => current.filter((id) => payload.files?.some((file) => file.id === id)));
+  }
+
+  useEffect(() => {
+    void loadSources();
+    void loadFiles();
+  }, []);
+
+  useEffect(() => {
+    if (!activeTaskId || !pendingAssistantId || provider !== "manus") return;
+
+    const interval = window.setInterval(async () => {
+      const response = await fetch(`/api/admin/ai/tasks/${encodeURIComponent(activeTaskId)}`);
+      const payload = (await response.json().catch(() => null)) as (AiResult & { error?: string }) | null;
+
+      if (!response.ok || !payload) {
+        setError(payload?.error ?? "Could not poll Manus task.");
+        setPendingAssistantId(null);
+        window.clearInterval(interval);
+        return;
+      }
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === pendingAssistantId
+            ? {
+                ...message,
+                content: payload.answer || payload.statusText || "Manus is still working...",
+                status: payload.status,
+              }
+            : message
+        )
+      );
+
+      if (payload.status === "stopped" || payload.status === "error") {
+        setPendingAssistantId(null);
+        window.clearInterval(interval);
+      }
+    }, 5000);
+
+    return () => window.clearInterval(interval);
+  }, [activeTaskId, pendingAssistantId, provider]);
+
+  async function saveSource() {
+    setSavingSource(true);
+    setError("");
+
+    const response = await fetch("/api/admin/ai/sources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: sourceName, sheetUrl }),
+    });
+    const payload = (await response.json().catch(() => null)) as { id?: string; error?: string } | null;
+
+    setSavingSource(false);
+
+    if (!response.ok) {
+      setError(payload?.error ?? "Could not save Google Sheet source.");
+      return;
+    }
+
+    setSourceName("");
+    setSheetUrl("");
+    await loadSources();
+    if (payload?.id) setSelectedSourceIds((current) => [...new Set([...current, payload.id as string])]);
+    setIncludeContextOnNextMessage(true);
+  }
+
+  async function deleteSource(id: string) {
+    const confirmed = window.confirm("Remove this sheet source from AI context?");
+    if (!confirmed) return;
+
+    setError("");
+    const response = await fetch(`/api/admin/ai/sources/${id}`, { method: "DELETE" });
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+    if (!response.ok) {
+      setError(payload?.error ?? "Could not remove sheet source.");
+      return;
+    }
+
+    await loadSources();
+  }
+
+  async function uploadFiles(uploadList: FileList | File[]) {
+    const uploadArray = Array.from(uploadList);
+    if (uploadArray.length === 0) return;
+
+    const oversized = uploadArray.find((file) => file.size > maxFileBytes);
+    if (oversized) {
+      setError(`${oversized.name} is over the 5MB limit.`);
+      return;
+    }
+
+    const formData = new FormData();
+    uploadArray.forEach((file) => formData.append("files", file));
+
+    setUploadingFiles(true);
+    setError("");
+
+    const response = await fetch("/api/admin/ai/files", {
+      method: "POST",
+      body: formData,
+    });
+    const payload = (await response.json().catch(() => null)) as { files?: FileSource[]; error?: string } | null;
+
+    setUploadingFiles(false);
+
+    if (!response.ok || !payload) {
+      setError(payload?.error ?? "Could not upload files.");
+      return;
+    }
+
+    await loadFiles();
+    setSelectedFileIds((current) => [...new Set([...current, ...(payload.files ?? []).map((file) => file.id)])]);
+    setIncludeContextOnNextMessage(true);
+  }
+
+  async function deleteFile(id: string) {
+    const confirmed = window.confirm("Remove this saved file from AI context?");
+    if (!confirmed) return;
+
+    setError("");
+    const response = await fetch(`/api/admin/ai/files/${id}`, { method: "DELETE" });
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+    if (!response.ok) {
+      setError(payload?.error ?? "Could not remove file.");
+      return;
+    }
+
+    await loadFiles();
+  }
+
+  function addLink() {
+    const value = linkDraft.trim();
+    if (!value) return;
+    setAttachedLinks((current) => [...new Set([...current, value])]);
+    setLinkDraft("");
+    setIncludeContextOnNextMessage(true);
+  }
+
+  async function sendMessage() {
+    if (!canSend) return;
+
+    const userMessage: ChatMessage = { id: createLocalId(), role: "user", content: draft.trim() };
+    const assistantId = createLocalId();
+    const assistantMessage: ChatMessage = {
+      id: assistantId,
+      role: "assistant",
+      content: provider === "manus" ? "Starting Manus..." : "Thinking...",
+      status: "running",
+    };
+    const conversationContext = conversationToText(messages);
+    const shouldAttachContext = !activeTaskId || includeContextOnNextMessage || provider === "openai";
+
+    setMessages((current) => [...current, userMessage, assistantMessage]);
+    setDraft("");
+    setAsking(true);
+    setError("");
+
+    const response = await fetch("/api/admin/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider,
+        taskId: provider === "manus" ? activeTaskId : null,
+        question: userMessage.content,
+        sourceIds: shouldAttachContext ? selectedSourceIds : [],
+        fileIds: shouldAttachContext ? selectedFileIds : [],
+        links: shouldAttachContext ? attachedLinks : [],
+        conversationContext: provider === "openai" ? conversationContext : "",
+        includeContext: shouldAttachContext,
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as (AiResult & { error?: string }) | null;
+
+    setAsking(false);
+
+    if (!response.ok || !payload) {
+      setMessages((current) => current.filter((message) => message.id !== assistantId));
+      setError(payload?.error ?? "AI request failed.");
+      return;
+    }
+
+    if (payload.taskId) setActiveTaskId(payload.taskId);
+    if (payload.taskUrl) setActiveTaskUrl(payload.taskUrl);
+
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === assistantId
+          ? {
+              ...message,
+              content: payload.answer || payload.statusText || "AI is working...",
+              status: payload.status,
+              sheets: payload.sheets,
+              files: payload.files,
+            }
+          : message
+      )
+    );
+
+    if (payload.provider === "manus" && payload.taskId && payload.status !== "stopped" && payload.status !== "error") {
+      setPendingAssistantId(assistantId);
+    }
+
+    if (payload.provider === "manus") {
+      setIncludeContextOnNextMessage(false);
+    }
+  }
+
+  function toggleSource(id: string) {
+    setSelectedSourceIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  }
+
+  function toggleFile(id: string) {
+    setSelectedFileIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  }
+
+  function startNewChat() {
+    setMessages([]);
+    setActiveTaskId(null);
+    setActiveTaskUrl(null);
+    setPendingAssistantId(null);
+    setIncludeContextOnNextMessage(true);
+    setError("");
+  }
+
+  const selectedSummary = useMemo(() => {
+    if (selectedContextCount === 0) return "BluTime only";
+    return `${selectedSourceIds.length} sheets / ${selectedFileIds.length} files / ${attachedLinks.length} links`;
+  }, [attachedLinks.length, selectedContextCount, selectedFileIds.length, selectedSourceIds.length]);
+
+  return (
+    <section className="card mt-4 p-6 sm:p-8">
+      <div className="flex flex-wrap items-start justify-between gap-5">
+        <div className="max-w-3xl">
+          <p className="font-mono text-xs uppercase tracking-[0.14em] text-[var(--accent-breeze)]">ai</p>
+          <h2 className="mt-2 text-4xl font-normal">AI Master Brain</h2>
+          <p className="mt-3 text-base text-muted">
+            A private mini chat for BluTime context, Google Sheets, saved files, and links. Chat history stays in this browser session only.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {activeTaskUrl ? (
+            <a href={activeTaskUrl} target="_blank" rel="noreferrer" className="border border-[var(--border)] px-4 py-2 text-sm text-[var(--accent-breeze)]">
+              Open Manus task
+            </a>
+          ) : null}
+          <button type="button" onClick={startNewChat} className="border border-[var(--border)] px-4 py-2 text-sm">
+            New chat
+          </button>
+        </div>
+      </div>
+
+      {error ? <p className="mt-5 rounded-xl border border-[var(--accent-sunset)] px-4 py-3 text-base text-[var(--accent-sunset)]">{error}</p> : null}
+
+      <div className="mt-7 grid gap-4 xl:grid-cols-[420px_1fr]">
+        <aside className="grid gap-4">
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5">
+            <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted">model</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
+              <select
+                value={provider}
+                onChange={(event) => setProvider(event.target.value as "manus" | "openai")}
+                className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base"
+              >
+                <option value="manus">Manus</option>
+                <option value="openai">OpenAI</option>
+              </select>
+              <span className="rounded-full border border-[var(--border-soft)] px-4 py-3 text-sm text-muted">{selectedSummary}</span>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted">sheets</p>
+                <h3 className="mt-2 text-2xl font-normal">Google Sheets</h3>
+              </div>
+              <span className="text-sm text-muted">{sources.length}</span>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <input
+                value={sourceName}
+                onChange={(event) => setSourceName(event.target.value)}
+                placeholder="Source name"
+                className="w-full border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base"
+              />
+              <input
+                value={sheetUrl}
+                onChange={(event) => setSheetUrl(event.target.value)}
+                placeholder="Paste Google Sheet URL"
+                className="w-full border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base"
+              />
+              <button
+                type="button"
+                onClick={() => void saveSource()}
+                disabled={savingSource || !sheetUrl.trim()}
+                className="border border-[var(--border-strong)] px-5 py-3 text-base disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingSource ? "Saving..." : "Save sheet"}
+              </button>
+            </div>
+
+            <div className="mt-4 grid max-h-[300px] gap-3 overflow-y-auto pr-1">
+              {loadingSources ? <p className="text-base text-muted">Loading sheets...</p> : null}
+              {sources.map((source) => (
+                <div key={source.id} className="rounded-xl border border-[var(--border-soft)] bg-[var(--background)] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <label className="flex min-w-0 flex-1 items-start gap-3">
+                      <input type="checkbox" checked={selectedSourceIds.includes(source.id)} onChange={() => toggleSource(source.id)} className="mt-1" />
+                      <span className="min-w-0">
+                        <span className="block text-base">{source.name}</span>
+                        <span className="mt-1 block break-all font-mono text-[11px] text-muted">{source.spreadsheetId}</span>
+                      </span>
+                    </label>
+                    <button type="button" onClick={() => void deleteSource(source.id)} className="border border-[var(--border)] px-3 py-2 text-xs text-muted">
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted">files</p>
+                <h3 className="mt-2 text-2xl font-normal">Drop files</h3>
+              </div>
+              <span className="text-sm text-muted">5MB max</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                void uploadFiles(event.dataTransfer.files);
+              }}
+              className="mt-4 w-full border border-dashed border-[var(--border-strong)] bg-[var(--background)] px-5 py-8 text-center text-base"
+            >
+              {uploadingFiles ? "Uploading..." : "Drop files here or click to upload"}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                if (event.target.files) void uploadFiles(event.target.files);
+                event.currentTarget.value = "";
+              }}
+            />
+
+            <div className="mt-4 grid max-h-[260px] gap-3 overflow-y-auto pr-1">
+              {loadingFiles ? <p className="text-base text-muted">Loading files...</p> : null}
+              {files.map((file) => (
+                <div key={file.id} className="rounded-xl border border-[var(--border-soft)] bg-[var(--background)] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <label className="flex min-w-0 flex-1 items-start gap-3">
+                      <input type="checkbox" checked={selectedFileIds.includes(file.id)} onChange={() => toggleFile(file.id)} className="mt-1" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-base">{file.filename}</span>
+                        <span className="mt-1 block text-xs text-muted">{formatBytes(file.sizeBytes)} / {file.contentType || "unknown"}</span>
+                      </span>
+                    </label>
+                    <button type="button" onClick={() => void deleteFile(file.id)} className="border border-[var(--border)] px-3 py-2 text-xs text-muted">
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5">
+            <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted">links</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
+              <input
+                value={linkDraft}
+                onChange={(event) => setLinkDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addLink();
+                  }
+                }}
+                placeholder="Paste sheet or reference link"
+                className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base"
+              />
+              <button type="button" onClick={addLink} className="border border-[var(--border-strong)] px-5 py-3 text-base">
+                Add
+              </button>
+            </div>
+            <div className="mt-3 grid gap-2">
+              {attachedLinks.map((link) => (
+                <div key={link} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-soft)] px-4 py-3">
+                  <span className="min-w-0 break-all text-sm text-muted">{link}</span>
+                  <button type="button" onClick={() => setAttachedLinks((current) => current.filter((item) => item !== link))} className="text-sm text-[var(--accent-sunset)]">
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </aside>
+
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-soft)] pb-4">
+            <div>
+              <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted">chat</p>
+              <h3 className="mt-2 text-2xl font-normal">One-to-one session</h3>
+            </div>
+            <span className="rounded-full border border-[var(--border-soft)] px-4 py-2 text-sm text-muted">
+              {activeTaskId ? "Manus thread active" : "No saved chat history"}
+            </span>
+          </div>
+
+          <div className="mt-5 grid min-h-[520px] content-start gap-4">
+            {messages.length === 0 ? (
+              <div className="rounded-2xl border border-[var(--border-soft)] bg-[var(--background)] p-6">
+                <p className="text-2xl">Ask something operational.</p>
+                <p className="mt-3 text-base text-muted">
+                  Example: compare a person&apos;s salary sheet row with BluTime output, time spent, clients handled, and recent work summaries.
+                </p>
+              </div>
+            ) : null}
+
+            {messages.map((message) => (
+              <article
+                key={message.id}
+                className={`rounded-2xl border p-5 ${
+                  message.role === "user"
+                    ? "border-[var(--accent-breeze)] bg-[rgba(160,195,236,0.08)]"
+                    : "border-[var(--border-soft)] bg-[var(--background)]"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted">{message.role}</p>
+                  {message.status ? <span className="text-xs text-muted">{message.status}</span> : null}
+                </div>
+                <div className="mt-3 whitespace-pre-wrap text-base leading-7">{message.content}</div>
+
+                {message.sheets && message.sheets.length > 0 ? (
+                  <div className="mt-4 grid gap-2">
+                    {message.sheets.map((sheet) => (
+                      <div key={sheet.spreadsheetId} className="rounded-xl border border-[var(--border-soft)] px-4 py-3 text-sm text-muted">
+                        <strong className="text-[var(--foreground)]">{sheet.title}</strong>
+                        <span className="mt-1 block">{sheet.tabs.map((tab) => `${tab.title}: ${tab.includedRows}/${tab.rows}`).join(" | ")}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {message.files && message.files.length > 0 ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {message.files.map((file) => (
+                      <span key={file.id} className="rounded-full border border-[var(--border-soft)] px-3 py-2 text-xs text-muted">
+                        {file.filename}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-5 border-t border-[var(--border-soft)] pt-4">
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                  event.preventDefault();
+                  void sendMessage();
+                }
+              }}
+              placeholder="Message AI Master Brain..."
+              rows={5}
+              className="w-full resize-y border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base"
+            />
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <label className="flex items-center gap-3 text-sm text-muted">
+                <input
+                  type="checkbox"
+                  checked={includeContextOnNextMessage}
+                  onChange={(event) => setIncludeContextOnNextMessage(event.target.checked)}
+                />
+                <span>
+                  Attach selected context to this message
+                  {activeTaskId && provider === "manus" ? " (off by default for follow-ups)" : ""}
+                </span>
+              </label>
+              <button
+                type="button"
+                onClick={() => void sendMessage()}
+                disabled={!canSend}
+                className="border border-[var(--border-strong)] px-6 py-3 text-base disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {asking || pendingAssistantId ? "Working..." : "Send"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}

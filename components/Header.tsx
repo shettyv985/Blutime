@@ -68,7 +68,7 @@ export function Header({ email, theme, onToggleTheme, onSignOut }: HeaderProps) 
                 color: "var(--foreground)",
               }}
             >
-              It's{" "}
+              It&apos;s{" "}
               <span style={{ color: "var(--primary)" }}>BluTime</span>
             </div>
           </div>

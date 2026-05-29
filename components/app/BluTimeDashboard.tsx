@@ -97,7 +97,7 @@ export function BluTimeDashboard({
       ? [{ id: "reports" as const, label: "Reports", description: "Work logs, filters, and PDF export." }]
       : []),
     ...(canManagePlanner
-      ? [{ id: "planner" as const, label: "Planner", description: "Clients, teams, routines, and scheduler." }]
+      ? [{ id: "planner" as const, label: "Planner", description: "Month-wise pod plan and CSV." }]
       : []),
     ...(!isEmployeeOnly && hasBasecampId
       ? [{ id: "tasks" as const, label: "Basecamp tasks", description: "Today and overdue assigned tasks." }]

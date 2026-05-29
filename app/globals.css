@@ -485,6 +485,262 @@ main {
   width: max-content;
 }
 
+.pod-role-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-soft);
+  border-radius: 9999px;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.pod-role-writer {
+  background: var(--accent-twilight-soft);
+  color: var(--accent-twilight);
+}
+
+.pod-role-designer {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.pod-role-production {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.pod-role-editor {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.pod-role-buffer {
+  background: var(--accent-dusk-soft);
+  color: var(--accent-twilight);
+}
+
+.planner-day-off {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+}
+
+.planner-day-half {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.planner-workbook-sheet {
+  color: #111111;
+}
+
+.excel-title,
+.excel-subheader,
+.excel-capacity,
+.excel-flag-warn,
+.excel-flag-ok,
+.excel-week-header,
+.excel-buffer-note {
+  border: 1px solid #bdbdbd;
+  color: #111111;
+  padding: 0.45rem 0.65rem;
+  white-space: pre-wrap;
+}
+
+.excel-title {
+  background: #1f2d3d;
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.excel-subheader {
+  background: #37474f;
+  color: #ffffff;
+  font-size: 0.8rem;
+}
+
+.excel-capacity {
+  background: #fffde7;
+  color: #ff6d00;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.excel-flag-warn {
+  background: #fff3f3;
+  color: #ff5252;
+  font-size: 0.78rem;
+}
+
+.excel-flag-ok,
+.excel-buffer-note {
+  background: #f1f8e9;
+  color: #1b5e20;
+  font-size: 0.78rem;
+}
+
+.excel-week-header {
+  background: #2c5f8a;
+  color: #ffffff;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.excel-week-buffer {
+  background: #e8eaf6;
+  color: #7b1fa2;
+}
+
+.planner-excel-table {
+  border-collapse: collapse;
+  color: #111111;
+  font-size: 0.78rem;
+  table-layout: fixed;
+  text-align: left;
+}
+
+.planner-excel-table th,
+.planner-excel-table td {
+  border: 1px solid #bdbdbd;
+  color: #111111 !important;
+  padding: 0.45rem 0.55rem;
+  vertical-align: top;
+  white-space: pre-wrap;
+}
+
+.planner-excel-table th {
+  background: #37474f;
+  color: #ffffff !important;
+  font-weight: 700;
+  text-align: center;
+}
+
+.planner-excel-table th:nth-child(1),
+.planner-excel-table td:nth-child(1) {
+  width: 126px;
+}
+
+.planner-excel-table th:nth-child(2),
+.planner-excel-table td:nth-child(2) {
+  width: 56px;
+  text-align: center;
+}
+
+.planner-excel-table th:nth-child(3),
+.planner-excel-table td:nth-child(3) {
+  width: 98px;
+  text-align: center;
+}
+
+.planner-excel-table th:nth-child(n + 4) {
+  width: 112px;
+}
+
+.excel-off-head {
+  background: #eeeeee !important;
+  color: #9e9e9e !important;
+}
+
+.excel-half-head {
+  background: #ffe0b2 !important;
+  color: #1f2d3d !important;
+}
+
+.excel-client-cell {
+  background: #ffffff;
+  font-weight: 700;
+}
+
+.excel-muted-cell,
+.excel-blank-cell {
+  background: #fafafa;
+  color: #9e9e9e !important;
+}
+
+.excel-role-cell {
+  font-weight: 700;
+}
+
+.excel-role-writer,
+.excel-task-writer {
+  background: #ede7f6;
+  color: #7e57c2 !important;
+}
+
+.excel-role-production,
+.excel-task-production {
+  background: #fce4ec;
+  color: #c62828 !important;
+}
+
+.excel-role-designer,
+.excel-task-designer {
+  background: #fff8e1;
+  color: #f9a825 !important;
+}
+
+.excel-role-editor,
+.excel-task-editor {
+  background: #e8f5e9;
+  color: #388e3c !important;
+}
+
+.excel-off-cell {
+  background: #eeeeee;
+  color: #9e9e9e !important;
+}
+
+.excel-half-cell {
+  background: #ffe0b2;
+  color: #9e9e9e !important;
+}
+
+.excel-week-total {
+  background: #e3f2fd;
+  color: #1565c0 !important;
+  font-weight: 700;
+  text-align: center;
+}
+
+.excel-min-ok {
+  background: #f1f8e9;
+  color: #1b5e20 !important;
+  font-weight: 700;
+  text-align: center;
+}
+
+.excel-min-warn {
+  background: #fff3f3;
+  color: #ff5252 !important;
+  font-weight: 700;
+  text-align: center;
+}
+
+.excel-buffer-cell {
+  background: #f3e5f5;
+  color: #111111 !important;
+}
+
+.excel-section-header {
+  background: #1f2d3d;
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+.excel-legend-label {
+  background: #fafafa;
+  color: #37474f !important;
+  font-weight: 700;
+  width: 220px;
+}
+
+.excel-legend-value {
+  background: #fafafa;
+  color: #111111 !important;
+}
+
 .planner-shell .scroll-area,
 .planner-shell .overflow-auto,
 .planner-shell .overflow-x-auto {

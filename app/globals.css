@@ -71,6 +71,7 @@
 *::before,
 *::after {
   box-sizing: border-box;
+  min-width: 0;
 }
 
 html,
@@ -448,6 +449,54 @@ main {
   overflow-x: hidden;
 }
 
+.planner-shell {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.planner-shell input,
+.planner-shell select,
+.planner-shell textarea,
+.planner-shell button {
+  max-width: 100%;
+}
+
+.planner-shell .data-table {
+  width: 100%;
+}
+
+.planner-shell .planner-table-card {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.planner-shell .planner-table-wrap {
+  contain: inline-size;
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: auto;
+  width: 100%;
+}
+
+.planner-shell .planner-table-wrap .data-table {
+  width: max-content;
+}
+
+.planner-shell .scroll-area,
+.planner-shell .overflow-auto,
+.planner-shell .overflow-x-auto {
+  max-width: 100%;
+}
+
+.planner-shell article,
+.planner-shell section,
+.planner-shell form {
+  max-width: 100%;
+}
+
 @keyframes slideUp {
   from {
     opacity: 0;
@@ -506,6 +555,20 @@ main {
   .data-table thead tr th,
   .data-table tbody tr td {
     padding: 0.75rem;
+  }
+
+  .planner-shell h2,
+  .planner-shell .text-4xl {
+    font-size: 2rem;
+  }
+
+  .planner-shell .text-3xl {
+    font-size: 1.65rem;
+  }
+
+  .planner-shell button {
+    min-height: 3rem;
+    white-space: normal;
   }
 }
 

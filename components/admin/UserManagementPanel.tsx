@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type DepartmentOption = {
   id: string;
@@ -17,6 +17,13 @@ type ManagedUser = {
   departmentId: string | null;
   departmentName: string | null;
   basecampPersonId: string | null;
+  isActive: boolean;
+};
+
+type ManagedCategory = {
+  id: string;
+  name: string;
+  slug: string;
   isActive: boolean;
 };
 
@@ -52,8 +59,87 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
   const [basecampPersonId, setBasecampPersonId] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [categorySaving, setCategorySaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
+  const [categories, setCategories] = useState<ManagedCategory[]>([]);
+  const [categoryName, setCategoryName] = useState("");
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [categoryDraft, setCategoryDraft] = useState<{ name: string; isActive: boolean } | null>(null);
+
+  async function loadCategories() {
+    const response = await fetch("/api/admin/categories", { cache: "no-store" });
+    const payload = (await response.json().catch(() => null)) as {
+      categories?: ManagedCategory[];
+      error?: string;
+    } | null;
+
+    if (!response.ok || !payload) {
+      setMessage(payload?.error ?? "Could not load categories.");
+      return;
+    }
+
+    setCategories(payload.categories ?? []);
+  }
+
+  useEffect(() => {
+    void loadCategories();
+  }, []);
+
+  async function createCategory(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage("");
+    setCategorySaving(true);
+
+    const response = await fetch("/api/admin/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: categoryName }),
+    });
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+    setCategorySaving(false);
+
+    if (!response.ok) {
+      setMessage(payload?.error ?? "Could not create category.");
+      return;
+    }
+
+    setCategoryName("");
+    setMessage("Category saved.");
+    await loadCategories();
+  }
+
+  function startCategoryEdit(category: ManagedCategory) {
+    setEditingCategoryId(category.id);
+    setCategoryDraft({ name: category.name, isActive: category.isActive });
+    setMessage("");
+  }
+
+  async function saveCategory(categoryId: string) {
+    if (!categoryDraft) return;
+    setCategorySaving(true);
+    setMessage("");
+
+    const response = await fetch("/api/admin/categories", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: categoryId, ...categoryDraft }),
+    });
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+    setCategorySaving(false);
+
+    if (!response.ok) {
+      setMessage(payload?.error ?? "Could not update category.");
+      return;
+    }
+
+    setEditingCategoryId(null);
+    setCategoryDraft(null);
+    setMessage("Category updated.");
+    await loadCategories();
+  }
 
   async function createUser(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -210,6 +296,99 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
       </form>
 
       {message ? <p className="mt-3 text-sm text-muted">{message}</p> : null}
+
+      <section className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="font-mono text-xs uppercase text-muted">categories</p>
+            <h3 className="mt-2 text-2xl font-normal">Task categories</h3>
+            <p className="mt-2 text-sm text-muted">Add categories for timers. Employees can also type a new one if needed.</p>
+          </div>
+          <span className="rounded-full border border-[var(--border)] px-3 py-2 text-sm text-muted">
+            {categories.filter((category) => category.isActive).length} active
+          </span>
+        </div>
+
+        <form onSubmit={createCategory} className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
+          <input
+            value={categoryName}
+            onChange={(event) => setCategoryName(event.target.value)}
+            placeholder="New category name"
+            className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3"
+            required
+          />
+          <button
+            type="submit"
+            disabled={categorySaving}
+            className="border border-[var(--border-strong)] px-5 py-3 text-base disabled:opacity-60"
+          >
+            {categorySaving ? "Saving..." : "Add category"}
+          </button>
+        </form>
+
+        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {categories.map((category) => (
+            <article key={category.id} className="rounded-xl border border-[var(--border-soft)] bg-[var(--surface)] p-4">
+              {editingCategoryId === category.id && categoryDraft ? (
+                <div className="grid gap-3">
+                  <input
+                    value={categoryDraft.name}
+                    onChange={(event) => setCategoryDraft((current) => current ? { ...current, name: event.target.value } : current)}
+                    className="border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2"
+                  />
+                  <select
+                    value={categoryDraft.isActive ? "active" : "inactive"}
+                    onChange={(event) => setCategoryDraft((current) => current ? { ...current, isActive: event.target.value === "active" } : current)}
+                    className="border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2"
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void saveCategory(category.id)}
+                      disabled={categorySaving}
+                      className="border border-[var(--border-strong)] px-4 py-2 text-sm disabled:opacity-60"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingCategoryId(null);
+                        setCategoryDraft(null);
+                      }}
+                      className="border border-[var(--border)] px-4 py-2 text-sm"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h4 className="truncate text-lg font-normal">{category.name}</h4>
+                    <p className="mt-1 truncate font-mono text-xs text-muted">{category.slug}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className={`rounded-full border px-3 py-1 text-xs ${category.isActive ? "border-[var(--success-border)] text-[var(--success)]" : "border-[var(--danger-border)] text-[var(--danger)]"}`}>
+                      {category.isActive ? "Active" : "Hidden"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => startCategoryEdit(category)}
+                      className="border border-[var(--border)] px-3 py-1 text-xs"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      </section>
 
       <div className="mt-5 overflow-x-auto">
         <table className="data-table min-w-[720px]">

@@ -79,6 +79,7 @@ export function EmployeeTimerPanel({
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [customCategoryName, setCustomCategoryName] = useState("");
   const [unplanned, setUnplanned] = useState(false);
   const [unplannedTask, setUnplannedTask] = useState("");
   const [unplannedClient, setUnplannedClient] = useState("");
@@ -147,19 +148,24 @@ export function EmployeeTimerPanel({
 
   async function startTimer() {
     setMessage("");
+    const categoryPayload =
+      categoryId === "__custom__"
+        ? { categoryId: "__custom__", categoryName: customCategoryName.trim() }
+        : { categoryId };
+
     const body = unplanned
       ? {
           taskSource: "unplanned",
           taskTitle: unplannedTask,
           clientName: unplannedClient,
-          categoryId,
+          ...categoryPayload,
         }
       : selectedTask
         ? {
             taskSource: "basecamp",
             taskTitle: selectedTask.title,
             clientName: selectedTask.projectName,
-            categoryId,
+            ...categoryPayload,
             basecampProjectId: selectedTask.projectId,
             basecampTaskId: selectedTask.id,
             basecampTaskUrl: selectedTask.appUrl,
@@ -189,6 +195,7 @@ export function EmployeeTimerPanel({
     setSelectedTaskId("");
     setUnplannedTask("");
     setUnplannedClient("");
+    setCustomCategoryName("");
     await loadState();
   }
 
@@ -271,10 +278,28 @@ export function EmployeeTimerPanel({
       {loading ? <p className="mt-3 text-sm text-muted">Loading timer data...</p> : null}
 
       <div className="mt-6 grid gap-3 lg:grid-cols-4">
-        <label className="flex items-center gap-2 text-sm font-semibold lg:col-span-4">
-          <input type="checkbox" checked={unplanned} onChange={(event) => setUnplanned(event.target.checked)} />
-          Unplanned task
-        </label>
+        <div className="grid gap-2 sm:grid-cols-2 lg:col-span-4">
+          <button
+            type="button"
+            aria-pressed={!unplanned}
+            onClick={() => setUnplanned(false)}
+            className={`border px-5 py-3 text-left text-base ${
+              !unplanned ? "border-[var(--border-strong)] bg-[var(--surface-soft)]" : "border-[var(--border)]"
+            }`}
+          >
+            Basecamp task
+          </button>
+          <button
+            type="button"
+            aria-pressed={unplanned}
+            onClick={() => setUnplanned(true)}
+            className={`border px-5 py-3 text-left text-base ${
+              unplanned ? "border-[var(--border-strong)] bg-[var(--surface-soft)]" : "border-[var(--border)]"
+            }`}
+          >
+            Unplanned task
+          </button>
+        </div>
 
         {unplanned ? (
           <>
@@ -341,7 +366,17 @@ export function EmployeeTimerPanel({
               {category.name}
             </option>
           ))}
+          <option value="__custom__">Other / type category</option>
         </select>
+
+        {categoryId === "__custom__" ? (
+          <input
+            value={customCategoryName}
+            onChange={(event) => setCustomCategoryName(event.target.value)}
+            placeholder="Type category"
+            className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3 lg:col-span-4"
+          />
+        ) : null}
 
         <button
           onClick={startTimer}

@@ -982,7 +982,7 @@ export function PlannerFoundationPanel() {
   }
 
   return (
-    <section className="card mt-4 rounded-2xl p-8">
+    <section className="card planner-shell mt-4 rounded-2xl p-4 sm:p-6 xl:p-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--primary)]">planner foundation</p>
@@ -1005,10 +1005,10 @@ export function PlannerFoundationPanel() {
       {message ? <p className="mt-4 text-base text-muted">{message}</p> : null}
 
       <div className="mt-8 grid gap-6">
-        <div className="rounded-2xl border border-[var(--border)] p-6">
+        <div className="planner-table-card rounded-2xl border border-[var(--border)] p-6">
           <h3 className="text-2xl font-semibold">Client setup</h3>
-          <div className="mt-5 max-h-[720px] overflow-auto pr-1">
-            <table className="data-table min-w-[1380px]">
+          <div className="planner-table-wrap scroll-area mt-5 max-h-[720px] pr-1">
+            <table className="data-table min-w-[1040px]">
               <thead>
                 <tr>
                   <th>Client</th>
@@ -1125,7 +1125,7 @@ export function PlannerFoundationPanel() {
               {routineLeadClients.length} active clients in this routine scope.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-auto xl:grid-cols-6">
             <select
               value={routineLeadId}
               onChange={(event) => {

@@ -10,6 +10,7 @@ type StartTimerBody = {
   taskSource?: TaskSource;
   taskTitle?: string;
   categoryId?: string;
+  categoryName?: string;
   clientName?: string;
   basecampProjectId?: string | null;
   basecampProjectUrl?: string | null;
@@ -61,6 +62,62 @@ async function findOrCreateClient(input: {
   return id;
 }
 
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+async function findOrCreateCategory(input: { categoryId?: string | null; categoryName?: string | null }) {
+  const categoryId = input.categoryId?.trim();
+  const categoryName = input.categoryName?.trim();
+
+  if (categoryId && categoryId !== "__custom__") {
+    const [category] = await db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(and(eq(categories.id, categoryId), eq(categories.isActive, true)))
+      .limit(1);
+
+    return category?.id ?? null;
+  }
+
+  if (!categoryName) return null;
+
+  const slug = slugify(categoryName);
+  if (!slug) return null;
+
+  const [existing] = await db
+    .select({ id: categories.id })
+    .from(categories)
+    .where(eq(categories.slug, slug))
+    .limit(1);
+
+  const now = new Date().toISOString();
+
+  if (existing) {
+    await db
+      .update(categories)
+      .set({ name: categoryName, isActive: true, updatedAt: now })
+      .where(eq(categories.id, existing.id));
+    return existing.id;
+  }
+
+  const id = createId();
+  await db.insert(categories).values({
+    id,
+    name: categoryName,
+    slug,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return id;
+}
+
 export async function POST(request: Request) {
   const user = await getCurrentUser();
 
@@ -71,8 +128,11 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as StartTimerBody | null;
   const taskTitle = body?.taskTitle?.trim();
   const clientName = body?.clientName?.trim();
-  const categoryId = body?.categoryId?.trim();
   const taskSource = body?.taskSource ?? "unplanned";
+  const categoryId = await findOrCreateCategory({
+    categoryId: body?.categoryId,
+    categoryName: body?.categoryName,
+  });
 
   if (!taskTitle || !clientName || !categoryId) {
     return NextResponse.json({ error: "Task, client, and category are required." }, { status: 400 });
@@ -85,16 +145,6 @@ export async function POST(request: Request) {
 
   if ((activeCount ?? 0) >= 5) {
     return NextResponse.json({ error: "You can run at most 5 timers." }, { status: 400 });
-  }
-
-  const [category] = await db
-    .select({ id: categories.id })
-    .from(categories)
-    .where(and(eq(categories.id, categoryId), eq(categories.isActive, true)))
-    .limit(1);
-
-  if (!category) {
-    return NextResponse.json({ error: "Invalid category." }, { status: 400 });
   }
 
   const clientId = await findOrCreateClient({

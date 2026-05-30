@@ -25,6 +25,21 @@
 
   --accent: #a0c3ec;
   --accent-glow: rgba(160, 195, 236, 0.12);
+  --accent-purple: #7c3aed;
+  --accent-purple-soft: rgba(124, 58, 237, 0.14);
+  --accent-pink: #c4b5fd;
+  --accent-pink-soft: rgba(196, 181, 253, 0.14);
+  --accent-blue: #a0c3ec;
+  --accent-blue-soft: rgba(160, 195, 236, 0.14);
+  --accent-blue-deep: #a0c3ec;
+  --accent-orange: #ff7a17;
+  --accent-orange-soft: rgba(255, 122, 23, 0.14);
+  --accent-green: #9ef0c5;
+  --accent-green-soft: rgba(158, 240, 197, 0.1);
+  --accent-yellow: #ffc285;
+  --accent-yellow-soft: rgba(255, 194, 133, 0.1);
+  --accent-red: #ff8b8b;
+  --accent-red-soft: rgba(255, 139, 139, 0.1);
   --accent-sunset: #ff7a17;
   --accent-sunset-soft: rgba(255, 122, 23, 0.14);
   --accent-dusk: #7c3aed;
@@ -34,6 +49,9 @@
   --accent-breeze: #a0c3ec;
   --accent-breeze-soft: rgba(160, 195, 236, 0.14);
   --accent-midnight: #0d1726;
+  --m-blue-light: #a0c3ec;
+  --m-blue-dark: #c4b5fd;
+  --m-red: #ff7a17;
 
   --danger: #ff8b8b;
   --danger-soft: rgba(255, 139, 139, 0.1);
@@ -51,7 +69,7 @@
   --font-body: "Geist", "Inter", system-ui, sans-serif;
   --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
 
-  --radius-xs: 4px;
+  --radius-xs: 2px;
   --radius-sm: 8px;
   --radius-md: 8px;
   --radius-lg: 8px;
@@ -89,6 +107,7 @@ body {
   font-family: var(--font-body);
   font-size: 1rem;
   line-height: 1.55;
+  background: var(--background);
 }
 
 #__next,
@@ -103,10 +122,10 @@ h3,
 h4,
 h5,
 h6 {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-weight: 400;
   line-height: 1.05;
-  letter-spacing: 0;
+  letter-spacing: -0.02em;
 }
 
 .font-bold,
@@ -115,7 +134,7 @@ h6 {
 }
 
 [class*="tracking-"] {
-  letter-spacing: 0 !important;
+  letter-spacing: 0.12em !important;
 }
 
 p {
@@ -128,6 +147,10 @@ a {
   text-underline-offset: 3px;
 }
 
+a:hover {
+  color: var(--primary-light);
+}
+
 .text-muted {
   color: var(--muted-light);
 }
@@ -137,10 +160,19 @@ a {
 .stat-card,
 .inset-surface,
 .timer-card-running {
+  position: relative;
+  overflow: hidden;
   background: var(--surface-elevated);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm) !important;
   box-shadow: none;
+}
+
+.premium-panel::before,
+.card::before,
+.stat-card::before,
+.timer-card-running::before {
+  display: none;
 }
 
 .card:hover,
@@ -150,11 +182,20 @@ a {
   box-shadow: none;
 }
 
+.premium-panel h2,
+.card h2,
+.card h3,
+.stat-card h2,
+.stat-card h3 {
+  font-weight: 400 !important;
+  text-transform: none;
+}
+
 input,
 select,
 textarea,
 .field {
-  min-height: 2.9rem;
+  min-height: 3rem;
   width: 100%;
   border-radius: var(--radius-sm) !important;
   border: 1px solid var(--border);
@@ -202,7 +243,6 @@ select {
 input[type="date"]::-webkit-calendar-picker-indicator,
 input[type="month"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
-  filter: invert(1);
   opacity: 0.72;
 }
 
@@ -214,15 +254,20 @@ button,
   font-family: var(--font-body);
   font-weight: 400 !important;
   letter-spacing: 0;
+  text-transform: none;
   transition: background 140ms ease, border-color 140ms ease, opacity 140ms ease, color 140ms ease;
 }
 
 button {
+  background: transparent;
+  color: var(--foreground);
   cursor: pointer;
 }
 
 button:hover:not(:disabled) {
   border-color: var(--border-strong);
+  background-color: var(--surface-hover);
+  color: var(--foreground);
 }
 
 button:disabled {
@@ -299,7 +344,7 @@ button.bg-\[var\(--primary\)\],
   font-family: var(--font-mono);
   font-size: 0.72rem;
   font-weight: 400;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   padding: 0.85rem 1rem;
   text-transform: uppercase;
   white-space: nowrap;
@@ -322,10 +367,11 @@ button.bg-\[var\(--primary\)\],
 
 .section-title {
   color: var(--foreground);
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-size: 1.2rem;
   font-weight: 400;
   line-height: 1.15;
+  text-transform: none;
 }
 
 .section-desc {
@@ -426,6 +472,149 @@ button.bg-\[var\(--primary\)\],
   box-shadow: none;
 }
 
+.lanyard-stage {
+  display: grid;
+  justify-items: center;
+  margin-top: 1.25rem;
+  min-height: 232px;
+  perspective: 900px;
+  position: relative;
+}
+
+.lanyard-rope {
+  width: 52px;
+  height: 72px;
+  border-left: 2px solid rgba(255, 255, 255, 0.28);
+  border-right: 2px solid rgba(255, 255, 255, 0.28);
+  transform-origin: top center;
+}
+
+.lanyard-clip {
+  width: 50px;
+  height: 18px;
+  margin-top: -2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9999px;
+  background: var(--surface-soft);
+}
+
+.lanyard-card {
+  width: min(100%, 280px);
+  margin-top: -1px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)), var(--surface-elevated);
+  padding: 1rem;
+  transform-origin: top center;
+  animation: lanyardSwing 4.8s ease-in-out infinite;
+}
+
+.lanyard-card-top {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: center;
+}
+
+.lanyard-avatar,
+.user-photo-cell {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+}
+
+.lanyard-avatar {
+  width: 72px;
+  height: 86px;
+  border-radius: 8px;
+}
+
+.lanyard-avatar img,
+.user-photo-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-photo-cell {
+  width: 42px;
+  height: 42px;
+  border-radius: 9999px;
+}
+
+@keyframes lanyardSwing {
+  0%,
+  100% {
+    transform: rotateZ(-2deg) rotateX(0deg);
+  }
+  50% {
+    transform: rotateZ(2deg) rotateX(3deg);
+  }
+}
+
+.employee-lanyard-wrapper {
+  position: relative;
+  width: 100%;
+  height: 460px;        /* taller canvas, panel stays same size visually */
+  margin-top: 0.75rem;
+  margin-bottom: -80px; /* pulls the panel bottom up so panel doesn't grow */
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 110%, rgba(15, 40, 84, 0.6) 0%, transparent 70%),
+    linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.008));
+}
+.employee-lanyard-top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 3px;
+  background: linear-gradient(90deg, transparent 5%, #0f2854 25%, #1a3d6e 50%, #0f2854 75%, transparent 95%);
+}
+
+.employee-lanyard-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.employee-lanyard-canvas:active {
+  cursor: grabbing;
+}
+
+.app-header {
+  box-shadow: 0 1px 0 var(--border-soft);
+}
+
+.m-stripe {
+  display: none;
+}
+
+.brand-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  text-transform: none;
+}
+
+.machined-label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 .divider {
   height: 1px;
   width: 100%;
@@ -466,6 +655,7 @@ main {
 }
 
 .planner-shell .planner-table-card {
+  border-radius: var(--radius-md) !important;
   max-width: 100%;
   min-width: 0;
   overflow: hidden;
@@ -687,6 +877,13 @@ main {
   color: #388e3c !important;
 }
 
+.excel-task-due-soon {
+  background: #fff3e0 !important;
+  border-color: #ff7a17 !important;
+  color: #a64500 !important;
+  font-weight: 700;
+}
+
 .excel-off-cell {
   background: #eeeeee;
   color: #9e9e9e !important;
@@ -751,6 +948,56 @@ main {
 .planner-shell section,
 .planner-shell form {
   max-width: 100%;
+}
+
+.planner-employee-card {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  min-height: 168px;
+  padding: 1rem;
+}
+
+.planner-employee-card .rounded-full {
+  border-radius: 9999px !important;
+}
+
+.planner-employee-card h3,
+.planner-employee-card p,
+.planner-employee-card span {
+  color: inherit;
+}
+
+.planner-employee-card p {
+  opacity: 0.86;
+}
+
+.planner-employee-writer {
+  background: rgba(196, 181, 253, 0.13);
+  border-color: rgba(196, 181, 253, 0.34);
+  color: #c4b5fd;
+}
+
+.planner-employee-designer {
+  background: rgba(255, 194, 133, 0.13);
+  border-color: rgba(255, 194, 133, 0.34);
+  color: #ffc285;
+}
+
+.planner-employee-editor {
+  background: rgba(160, 195, 236, 0.13);
+  border-color: rgba(160, 195, 236, 0.34);
+  color: #a0c3ec;
+}
+
+.planner-employee-production {
+  background: rgba(255, 122, 23, 0.13);
+  border-color: rgba(255, 122, 23, 0.34);
+  color: #ff7a17;
+}
+
+.planner-employee-due-soon {
+  border-color: rgba(255, 122, 23, 0.62);
+  box-shadow: inset 0 0 0 1px rgba(255, 122, 23, 0.22);
 }
 
 @keyframes slideUp {
@@ -887,3 +1134,4 @@ main {
     border-color: #dddddd !important;
   }
 }
+

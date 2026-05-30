@@ -25,6 +25,7 @@ type PodData = {
 };
 
 type WeekDay = {
+  dateKey: string;
   label: string;
   type: DayType;
 };
@@ -47,6 +48,18 @@ type RoleRow = {
   bg: string;
   border: string;
   isFirst: boolean;
+};
+
+export type EmployeePlannerItem = {
+  client: string;
+  dateLabel: string;
+  dueSoon: boolean;
+  order: number;
+  podName: keyof typeof pods;
+  role: RoleName;
+  service: string;
+  task: string;
+  weekName: string;
 };
 
 type BufferRow = {
@@ -109,7 +122,7 @@ const pods = {
       ["Abad", "PM+SM", "Durga/Fathima", "Shwetha", "Adithyan", 15, 12, "SM: +3 branding vids"],
       ["Activbase", "PM", "Fathima", "Akhil", "Adithyan", 5, 10, "cross-pod writer"],
       ["Kia", "PM+SM", "Naveen", "Akhil", "Adithyan", 12, 10, "SM: +4 statics +4 branding vids"],
-      ["Mother's Food", "PM", "Naveen", "Shwetha", "Adithyan", 5, 10, ""],
+      ["Mother's Food", "PM", "Naveen/Durga", "Shwetha", "Adithyan", 5, 10, ""],
       ["Memory Train", "PM", "Naveen", "Akhil", "Adithyan", 5, 10, ""],
       ["Pawan", "PM+SM", "Naveen", "Akhil", "Adithyan", 12, 10, "SM: +10 statics +5 branding vids"],
       ["Heal in Kerala", "PM", "Fathima", "Shwetha", "Adithyan", 12, 10, "cross-pod writer"],
@@ -151,7 +164,7 @@ const pods = {
     clients: [
       ["Zeiq", "PM+SM", "Durga (cross)", "Anandhu Shaji", "Jabin/Anu Rose", 15, 12, "SM: +3 branding vids"],
       ["Halwa", "PM+SM", "Alphin (cross)", "Abhijith MS", "Jabin/Anu Rose", 15, 10, "SM: +5 branding vids"],
-      ["Spaces Eco", "PM+SM", "Alphin (cross)", "Abhijith MS", "Jabin/Anu Rose", 15, 10, "SM: +5 branding vids"],
+      ["Spaces Eco", "PM+SM", "Durga (cross)/Alphin (cross)", "Abhijith MS", "Jabin/Anu Rose", 15, 10, "SM: +5 branding vids"],
       ["CNC", "PM", "Rohith (cross)", "Abhijith MS", "Jabin", 5, 30, "Heavy static load — 30/month"],
       ["Lexus", "PM+SM", "Rohith (cross)", "Abhijith MS", "Anu Rose", 12, 10, "SM: +10 statics +5 branding vids"],
       ["DK Healthcare", "SM", "Rohith (cross)", "Anandu KR (cross)", "—", 0, 12, "statics only, no editor"],
@@ -246,6 +259,19 @@ function dayLabel(date: Date) {
   return `${date.toLocaleDateString(undefined, { weekday: "short" })} ${date.getDate()} ${date.toLocaleDateString(undefined, { month: "short" })}`;
 }
 
+function dateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function isDueSoon(dateValue: string) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const target = new Date(`${dateValue}T00:00:00`).getTime();
+  const threeDays = 3 * 24 * 60 * 60 * 1000;
+
+  return target >= today && target <= today + threeDays;
+}
+
 function buildWeeks(monthKey: string): WeekBlock[] {
   const [year, month] = monthKey.split("-").map(Number);
   if (!year || !month) return [];
@@ -282,6 +308,7 @@ function buildWeeks(monthKey: string): WeekBlock[] {
       if (date.getDay() === 0) continue;
       const baseType = dayTypes.get(day) ?? "full";
       days.push({
+        dateKey: dateKey(date),
         label: dayLabel(date),
         type: isBuffer && baseType !== "off" ? "buffer" : baseType,
       });
@@ -680,6 +707,89 @@ function buildWorkbookXml(monthKey: string) {
   return workbook;
 }
 
+function roleForDepartment(departmentName?: string | null): RoleName | null {
+  if (departmentName === "Content Writer") return "Writer";
+  if (departmentName === "Designer") return "Designer";
+  if (departmentName === "Editor") return "Editor";
+  if (departmentName === "Production") return "Production";
+  return null;
+}
+
+function cleanPersonName(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, "")
+    .replace(/[^a-z0-9\s/]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function personMatches(rowPerson: string, employeeName: string) {
+  if (rowPerson === "Crew") return false;
+
+  const employee = cleanPersonName(employeeName);
+  const employeeFirst = employee.split(" ")[0] ?? "";
+  const people = rowPerson.split(/[\/,]/).map(cleanPersonName).filter(Boolean);
+
+  return people.some((person) => {
+    if (employee.includes(person) || person.includes(employee)) return true;
+    const personFirst = person.split(" ")[0] ?? "";
+    return employeeFirst.length > 2 && employeeFirst === personFirst;
+  });
+}
+
+export function getEmployeePlannerItems(
+  monthKey: string,
+  employeeName: string,
+  departmentName?: string | null
+): EmployeePlannerItem[] {
+  const targetRole = roleForDepartment(departmentName);
+  if (!targetRole) return [];
+
+  const weeks = buildWeeks(monthKey);
+  const items: EmployeePlannerItem[] = [];
+
+  for (const podName of Object.keys(pods) as Array<keyof typeof pods>) {
+    const podData = pods[podName];
+
+    for (const [weekIndex, week] of weeks.entries()) {
+      if (week.isBuffer) continue;
+
+      for (const client of podData.clients) {
+        const rows = buildRoleRows(podData, week, weekIndex, client);
+
+        for (const row of rows) {
+          if (row.role !== targetRole) continue;
+          if (!personMatches(row.person, employeeName)) continue;
+
+          for (const [dayIndex, day] of week.days.entries()) {
+            const task = row.tasks[day.label];
+            if (!task || day.type === "off") continue;
+
+            items.push({
+              client: row.client,
+              dateLabel: day.label,
+              dueSoon: isDueSoon(day.dateKey),
+              order: weekIndex * 10 + dayIndex,
+              podName,
+              role: row.role,
+              service: row.service,
+              task,
+              weekName: week.name,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return items.sort(
+    (left, right) =>
+      left.order - right.order ||
+      left.client.localeCompare(right.client)
+  );
+}
+
 function downloadWorkbook(monthKey: string) {
   const blob = new Blob([buildWorkbookXml(monthKey)], { type: "application/vnd.ms-excel;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -861,12 +971,21 @@ function WorkingWeek({ podData, week, weekIndex }: { podData: PodData; week: Wee
                       <td className={first ? "" : "excel-muted-cell"}>{first ? row.service : ""}</td>
                       <td className={`excel-role-cell excel-role-${row.role.toLowerCase()}`}>{row.role}</td>
                       {week.days.map((day) => {
-                        const task = row.tasks[day.label] ?? "";
-                        return (
-                          <td
-                            key={day.label}
-                            className={day.type === "off" ? "excel-off-cell" : task ? `excel-task-cell excel-task-${row.role.toLowerCase()}` : day.type === "half" ? "excel-half-cell" : "excel-blank-cell"}
-                          >
+                const task = row.tasks[day.label] ?? "";
+                const dueSoon = Boolean(task && isDueSoon(day.dateKey));
+                return (
+                  <td
+                    key={day.label}
+                    className={
+                      day.type === "off"
+                        ? "excel-off-cell"
+                        : task
+                          ? `excel-task-cell excel-task-${row.role.toLowerCase()}${dueSoon ? " excel-task-due-soon" : ""}`
+                          : day.type === "half"
+                            ? "excel-half-cell"
+                            : "excel-blank-cell"
+                    }
+                  >
                             {day.type === "off" ? "OFF" : task || (day.type === "half" ? "½ day" : "—")}
                           </td>
                         );

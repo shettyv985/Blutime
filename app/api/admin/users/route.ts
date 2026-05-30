@@ -26,6 +26,7 @@ export async function GET() {
       departmentId: users.departmentId,
       departmentName: departments.name,
       basecampPersonId: users.basecampPersonId,
+      photoUrl: users.photoUrl,
       isActive: users.isActive,
     })
     .from(users)
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
     accessRole?: AccessRole;
     departmentId?: string;
     basecampPersonId?: string;
+    photoUrl?: string;
   } | null;
 
   const name = body?.name?.trim();
@@ -57,6 +59,7 @@ export async function POST(request: Request) {
   const accessRole = body?.accessRole ?? "employee";
   const departmentId = body?.departmentId?.trim() || null;
   const basecampPersonId = body?.basecampPersonId?.trim() || null;
+  const photoUrl = body?.photoUrl?.trim() || null;
 
   if (!name || !email || !password || !departmentId) {
     return NextResponse.json(
@@ -97,6 +100,7 @@ export async function POST(request: Request) {
     accessRole,
     departmentId,
     basecampPersonId,
+    photoUrl,
     isActive: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -120,6 +124,7 @@ export async function PATCH(request: Request) {
     accessRole?: AccessRole;
     departmentId?: string;
     basecampPersonId?: string;
+    photoUrl?: string;
     isActive?: boolean;
   } | null;
 
@@ -129,6 +134,7 @@ export async function PATCH(request: Request) {
   const accessRole = body?.accessRole;
   const departmentId = body?.departmentId?.trim() || null;
   const basecampPersonId = body?.basecampPersonId?.trim() || null;
+  const photoUrl = body?.photoUrl?.trim() || null;
 
   if (!id || !name || !email || !accessRole || !departmentId) {
     return NextResponse.json(
@@ -179,6 +185,7 @@ export async function PATCH(request: Request) {
       accessRole,
       departmentId,
       basecampPersonId,
+      photoUrl,
       isActive: body?.isActive ?? true,
       ...(body?.password ? { passwordHash: await hashPassword(body.password) } : {}),
       updatedAt: new Date().toISOString(),

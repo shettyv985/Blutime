@@ -189,6 +189,7 @@ export const users = sqliteTable(
     accessRole: text("access_role").notNull().$type<AccessRole>(),
     departmentId: text("department_id").references(() => departments.id),
     basecampPersonId: text("basecamp_person_id"),
+    photoUrl: text("photo_url"),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
     ...timestamps(),
   },

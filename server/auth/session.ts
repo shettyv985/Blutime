@@ -56,6 +56,7 @@ export async function getSessionUser(token: string | undefined) {
       departmentName: departments.name,
       departmentSlug: departments.slug,
       basecampPersonId: users.basecampPersonId,
+      photoUrl: users.photoUrl,
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))

@@ -46,6 +46,7 @@ export default async function Home() {
             departmentId: users.departmentId,
             departmentName: departments.name,
             basecampPersonId: users.basecampPersonId,
+            photoUrl: users.photoUrl,
             isActive: users.isActive,
           })
           .from(users)

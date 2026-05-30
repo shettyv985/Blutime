@@ -239,10 +239,10 @@ export function AdminReportsPanel() {
       {totals ? (
         <>
           <div className="mt-5 grid gap-3 md:grid-cols-4">
-            <div className="stat-card"><p className="text-sm text-muted">Total time</p><strong className="mt-1 block text-2xl">{formatDuration(totals.totalSeconds)}</strong></div>
-            <div className="stat-card"><p className="text-sm text-muted">Logs</p><strong className="mt-1 block text-2xl">{totals.logCount}</strong></div>
-            <div className="stat-card"><p className="text-sm text-muted">Employees</p><strong className="mt-1 block text-2xl">{totals.employeeCount}</strong></div>
-            <div className="stat-card"><p className="text-sm text-muted">Clients</p><strong className="mt-1 block text-2xl">{totals.clientCount}</strong></div>
+            <div className="stat-card"><p className="text-sm text-muted p-2">Total time</p><strong className="mt-1 block text-2xl p-2">{formatDuration(totals.totalSeconds)}</strong></div>
+            <div className="stat-card"><p className="text-sm text-muted p-2">Logs</p><strong className="mt-1 block text-2xl p-2">{totals.logCount}</strong></div>
+            <div className="stat-card"><p className="text-sm text-muted p-2">Employees</p><strong className="mt-1 block text-2xl p-2">{totals.employeeCount}</strong></div>
+            <div className="stat-card"><p className="text-sm text-muted p-2">Clients</p><strong className="mt-1 block text-2xl p-2">{totals.clientCount}</strong></div>
           </div>
 
           <div className="mt-5 grid gap-4 xl:grid-cols-3">

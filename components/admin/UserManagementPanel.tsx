@@ -17,6 +17,7 @@ type ManagedUser = {
   departmentId: string | null;
   departmentName: string | null;
   basecampPersonId: string | null;
+  photoUrl: string | null;
   isActive: boolean;
 };
 
@@ -34,6 +35,7 @@ type EditDraft = {
   accessRole: string;
   departmentId: string;
   basecampPersonId: string;
+  photoUrl: string;
   isActive: boolean;
 };
 
@@ -49,6 +51,21 @@ const accessRoles = [
   { value: "boss", label: "Boss" },
 ];
 
+function normalizePhotoUrl(photoUrl?: string | null) {
+  if (!photoUrl) return null;
+
+  const trimmed = photoUrl.trim();
+  const fileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+  const openMatch = trimmed.match(/[?&]id=([^&]+)/);
+
+  if (fileMatch?.[1]) return `https://drive.google.com/uc?export=view&id=${fileMatch[1]}`;
+  if (trimmed.includes("drive.google.com") && openMatch?.[1]) {
+    return `https://drive.google.com/uc?export=view&id=${openMatch[1]}`;
+  }
+
+  return trimmed;
+}
+
 export function UserManagementPanel({ departments, users }: UserManagementPanelProps) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -57,6 +74,7 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
   const [accessRole, setAccessRole] = useState("employee");
   const [departmentId, setDepartmentId] = useState(departments[0]?.id ?? "");
   const [basecampPersonId, setBasecampPersonId] = useState("");
+  const [photoUrl, setPhotoUrl] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [categorySaving, setCategorySaving] = useState(false);
@@ -156,6 +174,7 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
         accessRole,
         departmentId,
         basecampPersonId,
+        photoUrl,
       }),
     });
 
@@ -171,6 +190,7 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
     setEmail("");
     setPassword("");
     setBasecampPersonId("");
+    setPhotoUrl("");
     setMessage("User created.");
     router.refresh();
   }
@@ -184,6 +204,7 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
       accessRole: user.accessRole,
       departmentId: user.departmentId ?? departments[0]?.id ?? "",
       basecampPersonId: user.basecampPersonId ?? "",
+      photoUrl: user.photoUrl ?? "",
       isActive: user.isActive,
     });
     setMessage("");
@@ -232,7 +253,7 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
         </p>
       </div>
 
-      <form onSubmit={createUser} className="mt-5 grid gap-3 lg:grid-cols-6">
+      <form onSubmit={createUser} className="mt-5 grid gap-3 lg:grid-cols-7">
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -285,11 +306,17 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
           placeholder="Basecamp person ID"
           className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3"
         />
+        <input
+          value={photoUrl}
+          onChange={(event) => setPhotoUrl(event.target.value)}
+          placeholder="Photo URL / Drive link"
+          className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3"
+        />
 
         <button
           type="submit"
           disabled={saving}
-          className="bg-[var(--primary)] px-5 py-3 disabled:opacity-60 lg:col-span-6"
+          className="bg-[var(--primary)] px-5 py-3 disabled:opacity-60 lg:col-span-7"
         >
           {saving ? "Creating..." : "Create user"}
         </button>
@@ -391,9 +418,10 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
       </section>
 
       <div className="mt-5 overflow-x-auto">
-        <table className="data-table min-w-[720px]">
+        <table className="data-table min-w-[920px]">
           <thead>
             <tr>
+              <th>Pic</th>
               <th>Name</th>
               <th>Email</th>
               <th>Role</th>
@@ -407,6 +435,14 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
               <tr key={user.id} className="align-top">
                 {editingId === user.id && editDraft ? (
                   <>
+                    <td className="py-3 pr-4">
+                      <input
+                        value={editDraft.photoUrl}
+                        onChange={(event) => updateEditDraft({ photoUrl: event.target.value })}
+                        placeholder="Photo URL"
+                        className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1"
+                      />
+                    </td>
                     <td className="py-3 pr-4">
                       <input
                         value={editDraft.name}
@@ -499,6 +535,16 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
                   </>
                 ) : (
                   <>
+                    <td className="py-3 pr-4">
+                      <div className="user-photo-cell">
+                        {normalizePhotoUrl(user.photoUrl) ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={normalizePhotoUrl(user.photoUrl) ?? ""} alt={user.name} referrerPolicy="no-referrer" />
+                        ) : (
+                          <span>{user.name.slice(0, 1).toUpperCase()}</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-3 pr-4 font-semibold">{user.name}</td>
                     <td className="py-3 pr-4">{user.email}</td>
                     <td className="py-3 pr-4">{user.accessRole}</td>

@@ -50,6 +50,13 @@
       "when": 1779966998784,
       "tag": "0006_ai_file_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1780090000000,
+      "tag": "0007_user_photo_url",
+      "breakpoints": true
     }
   ]
 }

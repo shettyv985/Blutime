@@ -280,25 +280,47 @@ export function EmployeeTimerPanel({
       <div className="mt-6 grid gap-3 lg:grid-cols-4">
         <div className="grid gap-2 sm:grid-cols-2 lg:col-span-4">
           <button
-            type="button"
-            aria-pressed={!unplanned}
-            onClick={() => setUnplanned(false)}
-            className={`border px-5 py-3 text-left text-base ${
-              !unplanned ? "border-[var(--border-strong)] bg-[var(--surface-soft)]" : "border-[var(--border)]"
-            }`}
-          >
-            Basecamp task
-          </button>
-          <button
-            type="button"
-            aria-pressed={unplanned}
-            onClick={() => setUnplanned(true)}
-            className={`border px-5 py-3 text-left text-base ${
-              unplanned ? "border-[var(--border-strong)] bg-[var(--surface-soft)]" : "border-[var(--border)]"
-            }`}
-          >
-            Unplanned task
-          </button>
+  type="button"
+  aria-pressed={!unplanned}
+  onClick={() => setUnplanned(false)}
+  style={
+    !unplanned
+      ? {
+          borderColor: "var(--accent-sunset)",
+          backgroundColor: "var(--accent-sunset-soft)",
+          color: "var(--accent-sunset)",
+        }
+      : {
+          borderColor: "var(--border)",
+          backgroundColor: "transparent",
+          color: "var(--foreground)",
+        }
+  }
+  className="border px-5 py-3 text-left text-base"
+>
+  Basecamp task
+</button>
+<button
+  type="button"
+  aria-pressed={unplanned}
+  onClick={() => setUnplanned(true)}
+  style={
+    unplanned
+      ? {
+          borderColor: "var(--accent-sunset)",
+          backgroundColor: "var(--accent-sunset-soft)",
+          color: "var(--accent-sunset)",
+        }
+      : {
+          borderColor: "var(--border)",
+          backgroundColor: "transparent",
+          color: "var(--foreground)",
+        }
+  }
+  className="border px-5 py-3 text-left text-base"
+>
+  Unplanned task
+</button>
         </div>
 
         {unplanned ? (

@@ -202,14 +202,21 @@ export function BluTimeDashboard({
       <section className="mx-auto max-w-[1680px] px-5 py-7 sm:px-8">
         <div className="grid gap-3 md:grid-cols-3">
           <div className="premium-panel p-6">
-  <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">Signed in as</p>
-  <EmployeeLanyardBadge
-    departmentName={user.departmentName}
-    email={user.email}
-    name={user.name}
-    photoUrl={user.photoUrl}
-  />
-</div>
+            <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">Signed in as</p>
+
+            {/* Mobile: name only */}
+            <h2 className="mt-3 text-2xl font-normal lg:hidden">{user.name}</h2>
+
+            {/* Desktop: lanyard */}
+            <div className="hidden lg:block">
+              <EmployeeLanyardBadge
+                departmentName={user.departmentName}
+                email={user.email}
+                name={user.name}
+                photoUrl={user.photoUrl}
+              />
+            </div>
+          </div>
 
           {isEmployeeOnly ? (
             <EmployeePlannerHighlights
@@ -275,11 +282,10 @@ export function BluTimeDashboard({
                     type="button"
                     aria-pressed={selected}
                     onClick={() => setActiveModule((current) => (current === module.id ? null : module.id))}
-                    className={`border px-7 py-6 text-center ${
-                      selected
+                    className={`border px-7 py-6 text-center ${selected
                         ? "border-[var(--border-strong)] bg-[var(--surface-soft)]"
                         : "border-[var(--border)] bg-transparent"
-                    }`}
+                      }`}
                   >
                     <span className="block text-xl text-center">{module.label}</span>
                     <span className="mt-2 block text-sm text-muted text-center">{module.description}</span>

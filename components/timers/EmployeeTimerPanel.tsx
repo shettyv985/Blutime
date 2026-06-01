@@ -1,25 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type Category = { id: string; name: string };
-type BasecampTask = {
-  id: string;
-  title: string;
-  appUrl: string | null;
-  dueOn: string | null;
-  projectId: string | null;
-  projectName: string;
-  parentId: string | null;
-  parentTitle: string | null;
-  isChild: boolean;
-  overdue: boolean;
-};
 type ActiveTimer = {
   id: string;
   clientName: string;
   categoryName: string;
   taskTitle: string;
+  taskSource: string;
   startedAt: string;
   status: string;
   elapsedSeconds: number;
@@ -54,33 +43,17 @@ function linkify(text: string) {
   );
 }
 
-function taskToneClass(task: BasecampTask) {
-  return task.overdue ? "task-tone-overdue" : "task-tone-today";
-}
-
-function taskStatusClass(task: BasecampTask) {
-  return task.overdue ? "task-status-overdue" : "task-status-today";
-}
-
-function taskStatusLabel(task: BasecampTask) {
-  return task.overdue ? "Overdue" : "Due today";
-}
-
 export function EmployeeTimerPanel({
-  hasBasecampId,
   showRecentLogs = true,
 }: {
   hasBasecampId: boolean;
   showRecentLogs?: boolean;
 }) {
   const [categories, setCategories] = useState<Category[]>([]);
-  const [tasks, setTasks] = useState<BasecampTask[]>([]);
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
-  const [selectedTaskId, setSelectedTaskId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [customCategoryName, setCustomCategoryName] = useState("");
-  const [unplanned, setUnplanned] = useState(false);
   const [unplannedTask, setUnplannedTask] = useState("");
   const [unplannedClient, setUnplannedClient] = useState("");
   const [outputs, setOutputs] = useState<Record<string, string>>({});
@@ -89,20 +62,13 @@ export function EmployeeTimerPanel({
   const [nowMs, setNowMs] = useState(0);
   const [stateLoadedAtMs, setStateLoadedAtMs] = useState(0);
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
-
-  const selectedTask = useMemo(
-    () => tasks.find((task) => task.id === selectedTaskId) ?? null,
-    [tasks, selectedTaskId]
-  );
-  const overdueCount = tasks.filter((task) => task.overdue).length;
-  const dueTodayCount = tasks.length - overdueCount;
+  const unplannedTimers = activeTimers.filter((timer) => timer.taskSource !== "basecamp");
 
   async function loadState(options: { silent?: boolean } = {}) {
     if (!options.silent) setLoading(true);
     const response = await fetch("/api/work/timer-state", { cache: "no-store" });
     const payload = (await response.json().catch(() => null)) as {
       categories?: Category[];
-      basecampTasks?: BasecampTask[];
       activeTimers?: ActiveTimer[];
       timeEntries?: TimeEntry[];
       error?: string;
@@ -111,7 +77,6 @@ export function EmployeeTimerPanel({
     if (!options.silent) setLoading(false);
     if (!options.silent || payload?.error) setMessage(payload?.error ?? "");
     setCategories(payload?.categories ?? []);
-    setTasks(payload?.basecampTasks ?? []);
     setActiveTimers(payload?.activeTimers ?? []);
     setTimeEntries(payload?.timeEntries ?? []);
     setCategoryId((current) => current || payload?.categories?.[0]?.id || "");
@@ -142,6 +107,15 @@ export function EmployeeTimerPanel({
   }, []);
 
   useEffect(() => {
+    function refreshAfterExternalStart() {
+      void loadState({ silent: true });
+    }
+
+    window.addEventListener("blu-time:timer-started", refreshAfterExternalStart);
+    return () => window.removeEventListener("blu-time:timer-started", refreshAfterExternalStart);
+  }, []);
+
+  useEffect(() => {
     const interval = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
@@ -153,37 +127,20 @@ export function EmployeeTimerPanel({
         ? { categoryId: "__custom__", categoryName: customCategoryName.trim() }
         : { categoryId };
 
-    const body = unplanned
-      ? {
-          taskSource: "unplanned",
-          taskTitle: unplannedTask,
-          clientName: unplannedClient,
-          ...categoryPayload,
-        }
-      : selectedTask
-        ? {
-            taskSource: "basecamp",
-            taskTitle: selectedTask.title,
-            clientName: selectedTask.projectName,
-            ...categoryPayload,
-            basecampProjectId: selectedTask.projectId,
-            basecampTaskId: selectedTask.id,
-            basecampTaskUrl: selectedTask.appUrl,
-            basecampParentId: selectedTask.parentId,
-            basecampParentTitle: selectedTask.parentTitle,
-            basecampDueOn: selectedTask.dueOn,
-          }
-        : null;
-
-    if (!body) {
-      setMessage("Select a task first.");
+    if (!unplannedTask.trim() || !unplannedClient.trim()) {
+      setMessage("Task and client are required for unplanned work.");
       return;
     }
 
     const response = await fetch("/api/work/timers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        taskSource: "unplanned",
+        taskTitle: unplannedTask,
+        clientName: unplannedClient,
+        ...categoryPayload,
+      }),
     });
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;
 
@@ -192,7 +149,6 @@ export function EmployeeTimerPanel({
       return;
     }
 
-    setSelectedTaskId("");
     setUnplannedTask("");
     setUnplannedClient("");
     setCustomCategoryName("");
@@ -258,18 +214,16 @@ export function EmployeeTimerPanel({
   }
 
   return (
-    <section className="card mt-5 p-6 sm:p-8">
+    <section className="card module-theme-panel mt-5 p-6 sm:p-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">work timer</p>
-          <h2 className="mt-2 text-4xl font-normal">Timer</h2>
-          <p className="mt-2 text-base text-muted">Pick a task, choose category, then track work.</p>
+          <h2 className="mt-2 text-4xl font-normal">Unplanned timer</h2>
+          <p className="mt-2 text-base text-muted">Use this only for work that is not already listed in Basecamp.</p>
         </div>
         <div className="flex flex-wrap gap-2 text-sm">
-          <span className="rounded-full border px-3 py-2 task-status-overdue">{overdueCount} overdue</span>
-          <span className="rounded-full border px-3 py-2 task-status-today">{dueTodayCount} today</span>
           <span className="rounded-full border border-[var(--border)] px-3 py-2 text-muted">
-            {activeTimers.length} active
+            {unplannedTimers.length} active
           </span>
         </div>
       </div>
@@ -278,105 +232,18 @@ export function EmployeeTimerPanel({
       {loading ? <p className="mt-3 text-sm text-muted">Loading timer data...</p> : null}
 
       <div className="mt-6 grid gap-3 lg:grid-cols-4">
-        <div className="grid gap-2 sm:grid-cols-2 lg:col-span-4">
-          <button
-  type="button"
-  aria-pressed={!unplanned}
-  onClick={() => setUnplanned(false)}
-  style={
-    !unplanned
-      ? {
-          borderColor: "var(--accent-sunset)",
-          backgroundColor: "var(--accent-sunset-soft)",
-          color: "var(--accent-sunset)",
-        }
-      : {
-          borderColor: "var(--border)",
-          backgroundColor: "transparent",
-          color: "var(--foreground)",
-        }
-  }
-  className="border px-5 py-3 text-left text-base"
->
-  Basecamp task
-</button>
-<button
-  type="button"
-  aria-pressed={unplanned}
-  onClick={() => setUnplanned(true)}
-  style={
-    unplanned
-      ? {
-          borderColor: "var(--accent-sunset)",
-          backgroundColor: "var(--accent-sunset-soft)",
-          color: "var(--accent-sunset)",
-        }
-      : {
-          borderColor: "var(--border)",
-          backgroundColor: "transparent",
-          color: "var(--foreground)",
-        }
-  }
-  className="border px-5 py-3 text-left text-base"
->
-  Unplanned task
-</button>
-        </div>
-
-        {unplanned ? (
-          <>
-            <input
-              value={unplannedTask}
-              onChange={(event) => setUnplannedTask(event.target.value)}
-              placeholder="Task"
-              className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3 lg:col-span-2"
-            />
-            <input
-              value={unplannedClient}
-              onChange={(event) => setUnplannedClient(event.target.value)}
-              placeholder="Client / project"
-              className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3"
-            />
-          </>
-        ) : (
-          <div className="grid gap-3 lg:col-span-3">
-            <select
-              value={selectedTaskId}
-              onChange={(event) => setSelectedTaskId(event.target.value)}
-              disabled={!hasBasecampId}
-              className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3"
-            >
-              <option value="">{hasBasecampId ? "Select Basecamp task" : "No Basecamp ID mapped"}</option>
-              {tasks.map((task) => (
-                <option
-                  key={task.id}
-                  value={task.id}
-                  style={{
-                    backgroundColor: "#191919",
-                    color: task.overdue ? "#FF7A17" : "#A0C3EC",
-                  }}
-                >
-                  {taskStatusLabel(task)} - {task.projectName} - {task.isChild ? "Step: " : ""}
-                  {task.title}
-                </option>
-              ))}
-            </select>
-
-            {selectedTask ? (
-              <div className={`border p-4 ${taskToneClass(selectedTask)}`}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`rounded-full border px-3 py-1 text-xs ${taskStatusClass(selectedTask)}`}>
-                    {taskStatusLabel(selectedTask)}
-                  </span>
-                  <span className="text-sm text-muted">{selectedTask.projectName}</span>
-                  {selectedTask.dueOn ? <span className="text-sm text-muted">{selectedTask.dueOn}</span> : null}
-                </div>
-                <p className="mt-2 text-lg text-[var(--foreground)]">{selectedTask.title}</p>
-                {selectedTask.parentTitle ? <p className="mt-1 text-sm text-muted">{selectedTask.parentTitle}</p> : null}
-              </div>
-            ) : null}
-          </div>
-        )}
+        <input
+          value={unplannedTask}
+          onChange={(event) => setUnplannedTask(event.target.value)}
+          placeholder="Task"
+          className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3 lg:col-span-2"
+        />
+        <input
+          value={unplannedClient}
+          onChange={(event) => setUnplannedClient(event.target.value)}
+          placeholder="Client / project"
+          className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3"
+        />
 
         <select
           value={categoryId}
@@ -413,11 +280,11 @@ export function EmployeeTimerPanel({
           <h3 className="text-2xl font-normal">Running timers</h3>
           <p className="text-sm text-muted">Each timer needs its own output before stop.</p>
         </div>
-        {activeTimers.length === 0 ? <p className="text-sm text-muted">No active timers.</p> : null}
-        {activeTimers.map((timer) => (
+        {unplannedTimers.length === 0 ? <p className="text-sm text-muted">No active unplanned timers.</p> : null}
+        {unplannedTimers.map((timer) => (
           <article
             key={timer.id}
-            className={`border border-[var(--border-soft)] bg-[var(--surface-elevated)] p-5 ${
+            className={`module-theme-item border border-[var(--border-soft)] bg-[var(--surface-elevated)] p-5 ${
               timer.status === "running" ? "timer-accent-running" : "timer-accent-paused"
             }`}
           >
@@ -479,7 +346,7 @@ export function EmployeeTimerPanel({
             <p className="text-sm text-muted">{timeEntries.length} saved logs</p>
           </div>
           {timeEntries.map((entry) => (
-            <article key={entry.id} className="border border-[var(--border-soft)] bg-[var(--surface-elevated)] p-5">
+            <article key={entry.id} className="module-theme-item border border-[var(--border-soft)] bg-[var(--surface-elevated)] p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-sm text-muted">

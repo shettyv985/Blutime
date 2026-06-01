@@ -41,9 +41,8 @@ type DragState = {
 const CARD_IMAGES: Record<string, HTMLImageElement> = {};
 const BASE_CW = 192;
 const BASE_CH = 280;
-const CR = 14;
+const CR = 16;
 const HOOK_H = 28;
-const ACCENT = "#0F2854";
 
 function initials(name: string) {
   return name
@@ -56,32 +55,20 @@ function initials(name: string) {
 
 function normalizePhotoUrl(photoUrl?: string | null) {
   if (!photoUrl) return null;
-
   const trimmed = photoUrl.trim();
   const fileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([^/]+)/);
   const openMatch = trimmed.match(/[?&]id=([^&]+)/);
-
-  if (fileMatch?.[1]) {
-    return `https://drive.google.com/uc?export=view&id=${fileMatch[1]}`;
-  }
-
-  if (trimmed.includes("drive.google.com") && openMatch?.[1]) {
+  if (fileMatch?.[1]) return `https://drive.google.com/uc?export=view&id=${fileMatch[1]}`;
+  if (trimmed.includes("drive.google.com") && openMatch?.[1])
     return `https://drive.google.com/uc?export=view&id=${openMatch[1]}`;
-  }
-
   return trimmed;
 }
 
 function loadImage(src: string) {
   if (CARD_IMAGES[src]) return;
-
   const img = new Image();
-  img.onload = () => {
-    CARD_IMAGES[src] = img;
-  };
-  img.onerror = () => {
-    delete CARD_IMAGES[src];
-  };
+  img.onload = () => { CARD_IMAGES[src] = img; };
+  img.onerror = () => { delete CARD_IMAGES[src]; };
   img.src = src;
 }
 
@@ -92,7 +79,10 @@ function getScale(cssW: number) {
   return Math.round(target * 100) / 100;
 }
 
-function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+function roundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number, r: number
+) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.lineTo(x + w - r, y);
@@ -106,14 +96,10 @@ function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
   ctx.closePath();
 }
 
-function bezierPoint(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, t: number) {
-  return {
-    x: (1 - t) * (1 - t) * ax + 2 * (1 - t) * t * bx + t * t * cx,
-    y: (1 - t) * (1 - t) * ay + 2 * (1 - t) * t * by + t * t * cy,
-  };
-}
-
-function drawStrap(ctx: CanvasRenderingContext2D, ax: number, ay: number, hx: number, hy: number) {
+function drawStrap(
+  ctx: CanvasRenderingContext2D,
+  ax: number, ay: number, hx: number, hy: number
+) {
   const mx = (ax + hx) / 2;
   const sag = 20 + Math.abs(hx - ax) * 0.07;
   const by = ay + sag + Math.max(0, (hy - ay) * 0.15);
@@ -125,7 +111,7 @@ function drawStrap(ctx: CanvasRenderingContext2D, ax: number, ay: number, hx: nu
   ctx.moveTo(ax, ay);
   ctx.quadraticCurveTo(mx, by, hx, hy);
   ctx.strokeStyle = "rgba(0,0,0,0.5)";
-  ctx.lineWidth = 34;
+  ctx.lineWidth = 25;
   ctx.stroke();
 
   ctx.beginPath();
@@ -145,16 +131,19 @@ function drawStrap(ctx: CanvasRenderingContext2D, ax: number, ay: number, hx: nu
   ctx.restore();
 }
 
-function drawHook(ctx: CanvasRenderingContext2D, cx: number, cardTopY: number, scale: number) {
+function drawHook(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cardTopY: number, scale: number
+) {
   const hw = 14 * scale;
   const hh = HOOK_H * scale;
   const hx = cx - hw / 2;
   const hy = cardTopY - hh;
 
   ctx.save();
-  ctx.shadowColor = "rgba(0,0,0,0.5)";
-  ctx.shadowBlur = 8;
-  ctx.shadowOffsetY = 3;
+  ctx.shadowColor = "rgba(0,0,0,0.6)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 4;
 
   const metalGradient = ctx.createLinearGradient(hx, hy, hx + hw, hy + hh);
   metalGradient.addColorStop(0, "#e5e7eb");
@@ -173,6 +162,7 @@ function drawHook(ctx: CanvasRenderingContext2D, cx: number, cardTopY: number, s
   ctx.lineWidth = 0.7;
   ctx.stroke();
 
+  // rivet hole
   ctx.beginPath();
   ctx.arc(cx, hy + hh / 2, 2.8 * scale, 0, Math.PI * 2);
   ctx.fillStyle = "#6b7280";
@@ -182,10 +172,16 @@ function drawHook(ctx: CanvasRenderingContext2D, cx: number, cardTopY: number, s
   ctx.arc(cx - 0.8 * scale, hy + hh / 2 - 0.8 * scale, 1.2 * scale, 0, Math.PI * 2);
   ctx.fillStyle = "rgba(255,255,255,0.5)";
   ctx.fill();
+
   ctx.restore();
 }
 
-function fitImage(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
+// Contain: show full image, letterbox with dark bg
+function containImage(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number, y: number, w: number, h: number
+) {
   const imgAspect = img.width / img.height;
   const boxAspect = w / h;
   let drawW = w;
@@ -194,17 +190,23 @@ function fitImage(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: numbe
   let drawY = y;
 
   if (imgAspect > boxAspect) {
-    drawW = h * imgAspect;
-    drawX = x - (drawW - w) / 2;
-  } else {
+    // image wider — fit width
     drawH = w / imgAspect;
-    drawY = y - (drawH - h) / 2;
+    drawY = y + (h - drawH) / 2;
+  } else {
+    // image taller — fit height
+    drawW = h * imgAspect;
+    drawX = x + (w - drawW) / 2;
   }
 
   ctx.drawImage(img, drawX, drawY, drawW, drawH);
 }
 
-function drawCard(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number, card: CardData, scale: number) {
+function drawCard(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, angle: number,
+  card: CardData, scale: number
+) {
   const cw = BASE_CW * scale;
   const ch = BASE_CH * scale;
 
@@ -215,93 +217,92 @@ function drawCard(ctx: CanvasRenderingContext2D, x: number, y: number, angle: nu
   const rx = -cw / 2;
   const ry = -ch / 2;
 
-  // Soft outer glow
-  ctx.shadowColor = "rgba(26, 61, 110, 0.9)";
-  ctx.shadowBlur = 32;
-  ctx.shadowOffsetY = 12;
+  // ── Card drop shadow (only physical depth, not decorative) ──
+  ctx.shadowColor = "rgba(0,0,0,0.55)";
+  ctx.shadowBlur = 40;
+  ctx.shadowOffsetY = 16;
   roundedRect(ctx, rx, ry, cw, ch, CR);
-  ctx.fillStyle = "#0f2854";
+  ctx.fillStyle = "#191919";
   ctx.fill();
   ctx.shadowBlur = 0;
   ctx.shadowOffsetY = 0;
 
-  // Blue gradient card face
+  // ── Card face: xAI canvas-card #191919 ──
   ctx.save();
   roundedRect(ctx, rx, ry, cw, ch, CR);
   ctx.clip();
-
-  const bgGradient = ctx.createLinearGradient(rx, ry, rx + cw * 0.6, ry + ch);
-  bgGradient.addColorStop(0, "#1e4a8a");
-  bgGradient.addColorStop(0.45, "#0f2f60");
-  bgGradient.addColorStop(1, "#ffffff");
-  ctx.fillStyle = bgGradient;
+  ctx.fillStyle = "#191919";
   ctx.fillRect(rx, ry, cw, ch);
-
-  // Subtle shimmer diagonal
-  const shimmer = ctx.createLinearGradient(rx, ry, rx + cw, ry + ch * 0.5);
-  shimmer.addColorStop(0, "rgba(255,255,255,0.06)");
-  shimmer.addColorStop(0.4, "rgba(255,255,255,0.0)");
-  shimmer.addColorStop(1, "rgba(255,255,255,0.03)");
-  ctx.fillStyle = shimmer;
-  ctx.fillRect(rx, ry, cw, ch);
-
   ctx.restore();
 
-  // Photo inset with padding
-  const padding = 16 * scale;
-  const photoX = rx + padding;
-  const photoY = ry + padding;
-  const photoW = cw - padding * 2;
-  const photoH = ch - padding * 2;
-
-  // Photo shadow
-  ctx.shadowColor = "rgba(0,0,0,0.5)";
-  ctx.shadowBlur = 14;
-  ctx.shadowOffsetY = 6;
-  roundedRect(ctx, photoX, photoY, photoW, photoH, 9);
-  ctx.fillStyle = "#1a3a6e";
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.shadowOffsetY = 0;
+  // ── Photo area — fills the full card interior ──
+  const pad = 10 * scale;
+  const photoX = rx + pad;
+  const photoY = ry + pad;
+  const photoW = cw - pad * 2;
+  const photoH = ch - pad * 2;
 
   ctx.save();
-  roundedRect(ctx, photoX, photoY, photoW, photoH, 9);
+  roundedRect(ctx, photoX, photoY, photoW, photoH, 8);
   ctx.clip();
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(photoX, photoY, photoW, photoH);
 
   const loadedImg = card.image ? CARD_IMAGES[card.image] : undefined;
   if (loadedImg) {
-    fitImage(ctx, loadedImg, photoX, photoY, photoW, photoH);
+    // ─────────────────────────────────────────────────────
+    // IMAGE ZOOM — change this one number to resize the image
+    //   1.0  = image fits exactly inside the frame (contain)
+    //   1.12 = current: 12% larger (slight zoom, no hard crop)
+    //   1.3  = noticeably zoomed in
+    //   1.5+ = heavily zoomed, edges will be clipped by the frame
+    // ─────────────────────────────────────────────────────
+    const zoom = 0.80;
+    const imgAspect = loadedImg.width / loadedImg.height;
+    const boxAspect = photoW / photoH;
+    let baseW: number, baseH: number, baseX: number, baseY: number;
+    if (imgAspect > boxAspect) {
+      baseH = photoH;
+      baseW = photoH * imgAspect;
+      baseX = photoX + (photoW - baseW) / 2;
+      baseY = photoY;
+    } else {
+      baseW = photoW;
+      baseH = photoW / imgAspect;
+      baseX = photoX;
+      baseY = photoY + (photoH - baseH) / 2;
+    }
+    const zW = baseW * zoom;
+    const zH = baseH * zoom;
+    const zX = photoX + (photoW - zW) / 2;
+    const zY = photoY + (photoH - zH) / 2;
+    ctx.drawImage(loadedImg, zX, zY, zW, zH);
   } else {
+    // fallback silhouette on dark
     const centerX = photoX + photoW / 2;
     const headR = photoH * 0.17;
-    const headY = photoY + photoH * 0.32;
-    ctx.fillStyle = "#162f5a";
-    ctx.fillRect(photoX, photoY, photoW, photoH);
+    const headY = photoY + photoH * 0.35;
     ctx.beginPath();
     ctx.arc(centerX, headY, headR, 0, Math.PI * 2);
-    ctx.fillStyle = "#7a96b8";
+    ctx.fillStyle = "#363a3f";
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(centerX, photoY + photoH * 1.04, photoH * 0.44, Math.PI, 0);
-    ctx.fillStyle = "#7a96b8";
+    ctx.arc(centerX, photoY + photoH * 1.05, photoH * 0.44, Math.PI, 0);
+    ctx.fillStyle = "#363a3f";
     ctx.fill();
   }
   ctx.restore();
 
-  // Inner photo border — glassy white edge
-  roundedRect(ctx, photoX, photoY, photoW, photoH, 9);
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  // photo area hairline border
+  roundedRect(ctx, photoX, photoY, photoW, photoH, 8);
+  ctx.strokeStyle = "#212327";
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // Outer card border — faint blue-white
+  // ── Outer card hairline border: #212327 ──
   roundedRect(ctx, rx, ry, cw, ch, CR);
-  const borderGradient = ctx.createLinearGradient(rx, ry, rx + cw, ry + ch);
-  borderGradient.addColorStop(0, "rgba(160,195,236,0.35)");
-  borderGradient.addColorStop(0.5, "rgba(255,255,255,0.08)");
-  borderGradient.addColorStop(1, "rgba(160,195,236,0.2)");
-  ctx.strokeStyle = borderGradient;
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = "#212327";
+  ctx.lineWidth = 1;
   ctx.stroke();
 
   ctx.restore();
@@ -320,11 +321,11 @@ export function EmployeeLanyardBadge({ departmentName, name, photoUrl }: Employe
     angle: -0.08,
     av: 0.01,
     tx: 0,
-    ty: 80,
+    ty: 60,
     vx: -1,
     vy: 2,
     x: 0,
-    y: 80,
+    y: 60,
   });
   const dragRef = useRef<DragState>({
     active: false,
@@ -339,7 +340,6 @@ export function EmployeeLanyardBadge({ departmentName, name, photoUrl }: Employe
 
   const card = useMemo<CardData>(() => {
     const image = normalizePhotoUrl(photoUrl);
-
     return {
       fullName: name.toUpperCase(),
       initials: initials(name),
@@ -377,7 +377,8 @@ export function EmployeeLanyardBadge({ departmentName, name, photoUrl }: Employe
       const cw = BASE_CW * scale;
       const ch = BASE_CH * scale;
       const nextX = cssW / 2 - cw / 2;
-      const nextY = Math.max(42, Math.min(cssH - ch - 8, cssH * 0.2));
+      // card hangs at a comfortable mid-upper position
+      const nextY = Math.max(48, Math.min(cssH - ch - 8, cssH * 0.22));
       const state = stateRef.current;
 
       if (!dragRef.current.active) {
@@ -395,9 +396,7 @@ export function EmployeeLanyardBadge({ departmentName, name, photoUrl }: Employe
       const rect = currentCanvas.getBoundingClientRect();
       mouseRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
     };
-    const onMouseLeave = () => {
-      mouseRef.current = null;
-    };
+    const onMouseLeave = () => { mouseRef.current = null; };
     const onTouchMove = (event: TouchEvent) => {
       const rect = currentCanvas.getBoundingClientRect();
       const touch = event.touches[0];
@@ -420,6 +419,9 @@ export function EmployeeLanyardBadge({ departmentName, name, photoUrl }: Employe
     const swingSpeed = 0.0009;
     const swingAmount = 12;
 
+    // ── Shorter rope ──
+    const ROPE_BASE = 80;
+
     function loop(ts: number) {
       const ctx = currentCanvas.getContext("2d");
       if (!ctx) return;
@@ -432,7 +434,8 @@ export function EmployeeLanyardBadge({ departmentName, name, photoUrl }: Employe
       const ch = BASE_CH * scale;
       const anchorX = cssW / 2;
       const anchorY = 0;
-      const rope = Math.max(130, Math.min(220, cssH * 0.58));
+      // ── Reduced rope length ──
+      const rope = Math.max(ROPE_BASE, Math.min(140, cssH * 0.35));
       const state = stateRef.current;
       const drag = dragRef.current;
 
@@ -441,7 +444,7 @@ export function EmployeeLanyardBadge({ departmentName, name, photoUrl }: Employe
 
       if (!drag.active) {
         const restX = anchorX - cw / 2 + Math.sin(ts * swingSpeed) * swingAmount;
-        const restY = rope - ch / 2 + 40;
+        const restY = rope - ch / 2 + 36;
         let targetX = restX;
         let targetY = restY;
         const mouse = mouseRef.current;
@@ -492,11 +495,9 @@ export function EmployeeLanyardBadge({ departmentName, name, photoUrl }: Employe
         state.av *= angularDamping;
         const nextAngle = state.angle + state.av;
         if (nextAngle > maxAngle) {
-          state.angle = maxAngle;
-          state.av *= -0.3;
+          state.angle = maxAngle; state.av *= -0.3;
         } else if (nextAngle < -maxAngle) {
-          state.angle = -maxAngle;
-          state.av *= -0.3;
+          state.angle = -maxAngle; state.av *= -0.3;
         } else {
           state.angle = nextAngle;
         }
@@ -512,22 +513,10 @@ export function EmployeeLanyardBadge({ departmentName, name, photoUrl }: Employe
       }
 
       const maxY = cssH - ch - 8;
-      if (state.y > maxY) {
-        state.y = maxY;
-        state.vy *= -0.25;
-      }
-      if (state.y < 18) {
-        state.y = 18;
-        state.vy *= -0.25;
-      }
-      if (state.x < -cw * 0.25) {
-        state.x = -cw * 0.25;
-        state.vx *= -0.28;
-      }
-      if (state.x > cssW - cw * 0.75) {
-        state.x = cssW - cw * 0.75;
-        state.vx *= -0.28;
-      }
+      if (state.y > maxY)  { state.y = maxY;        state.vy *= -0.25; }
+      if (state.y < 18)    { state.y = 18;           state.vy *= -0.25; }
+      if (state.x < -cw * 0.25) { state.x = -cw * 0.25; state.vx *= -0.28; }
+      if (state.x > cssW - cw * 0.75) { state.x = cssW - cw * 0.75; state.vx *= -0.28; }
 
       ctx.save();
       ctx.translate(state.x + cw / 2, state.y + ch / 2);
@@ -567,17 +556,11 @@ export function EmployeeLanyardBadge({ departmentName, name, photoUrl }: Employe
       const mx = event.clientX - rect.left;
       const my = event.clientY - rect.top;
       if (!hit(mx, my)) return;
-
       const state = stateRef.current;
       dragRef.current = {
-        active: true,
-        lastX: mx,
-        lastY: my,
-        ox: mx - state.x,
-        oy: my - state.y,
-        pvx: 0,
-        pvy: 0,
-        smoothVx: 0,
+        active: true, lastX: mx, lastY: my,
+        ox: mx - state.x, oy: my - state.y,
+        pvx: 0, pvy: 0, smoothVx: 0,
       };
       event.currentTarget.setPointerCapture(event.pointerId);
     },
@@ -587,12 +570,10 @@ export function EmployeeLanyardBadge({ departmentName, name, photoUrl }: Employe
   const onMove = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas || !dragRef.current.active) return;
-
     const rect = canvas.getBoundingClientRect();
     const mx = event.clientX - rect.left;
     const my = event.clientY - rect.top;
     const drag = dragRef.current;
-
     drag.pvx = mx - drag.lastX;
     drag.pvy = my - drag.lastY;
     drag.lastX = mx;
@@ -604,7 +585,6 @@ export function EmployeeLanyardBadge({ departmentName, name, photoUrl }: Employe
   const onUp = useCallback(() => {
     const drag = dragRef.current;
     if (!drag.active) return;
-
     stateRef.current.vx = drag.pvx * 0.9;
     stateRef.current.vy = drag.pvy * 0.9;
     stateRef.current.av = Math.max(-0.06, Math.min(0.06, drag.smoothVx * 0.012));

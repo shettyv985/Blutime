@@ -46,7 +46,7 @@ export function CompanyTodayOverview({
   }, []);
 
   return (
-    <section className="card mt-5 p-6 sm:p-8">
+    <section className="card module-theme-panel mt-5 p-6 sm:p-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">company today</p>
@@ -64,7 +64,7 @@ export function CompanyTodayOverview({
           <div className="mt-3 grid gap-3">
             {activeWork.length === 0 ? <p className="text-base text-muted">No one is tracking right now.</p> : null}
             {activeWork.map((item) => (
-              <article key={item.id} className="border border-[var(--border-soft)] bg-[var(--surface-elevated)] p-5">
+              <article key={item.id} className="module-theme-item border border-[var(--border-soft)] bg-[var(--surface-elevated)] p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-base text-[var(--foreground)]">{item.userName}</p>
@@ -90,7 +90,7 @@ export function CompanyTodayOverview({
           <div className="mt-3 grid max-h-[520px] gap-3 overflow-auto pr-1">
             {todayLogs.length === 0 ? <p className="text-base text-muted">No saved logs today.</p> : null}
             {todayLogs.map((log) => (
-              <article key={log.id} className="border border-[var(--border-soft)] bg-[var(--surface-elevated)] p-5">
+              <article key={log.id} className="module-theme-item border border-[var(--border-soft)] bg-[var(--surface-elevated)] p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-base text-[var(--foreground)]">{log.userName}</p>

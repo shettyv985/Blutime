@@ -468,6 +468,32 @@ export const aiFileSources = sqliteTable(
   ]
 );
 
+export const aiChatSessions = sqliteTable(
+  "ai_chat_sessions",
+  {
+    id: text("id").primaryKey(),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id),
+    title: text("title").notNull(),
+    provider: text("provider").notNull().default("manus"),
+    activeTaskId: text("active_task_id"),
+    activeTaskUrl: text("active_task_url"),
+    messagesJson: text("messages_json").notNull().default("[]"),
+    selectedSourceIdsJson: text("selected_source_ids_json").notNull().default("[]"),
+    selectedFileIdsJson: text("selected_file_ids_json").notNull().default("[]"),
+    attachedLinksJson: text("attached_links_json").notNull().default("[]"),
+    includeContextOnNextMessage: integer("include_context_on_next_message", { mode: "boolean" }).notNull().default(true),
+    isArchived: integer("is_archived", { mode: "boolean" }).notNull().default(false),
+    ...timestamps(),
+  },
+  (table) => [
+    index("ai_chat_sessions_owner_user_id_idx").on(table.ownerUserId),
+    index("ai_chat_sessions_updated_at_idx").on(table.updatedAt),
+    index("ai_chat_sessions_is_archived_idx").on(table.isArchived),
+  ]
+);
+
 export const usersRelations = relations(users, ({ one, many }) => ({
   department: one(departments, {
     fields: [users.departmentId],
@@ -490,6 +516,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   createdMonthlyPlans: many(monthlyPlans),
   aiSheetSources: many(aiSheetSources),
   aiFileSources: many(aiFileSources),
+  aiChatSessions: many(aiChatSessions),
 }));
 
 export const departmentsRelations = relations(departments, ({ many }) => ({
@@ -677,6 +704,13 @@ export const aiFileSourcesRelations = relations(aiFileSources, ({ one }) => ({
   }),
 }));
 
+export const aiChatSessionsRelations = relations(aiChatSessions, ({ one }) => ({
+  owner: one(users, {
+    fields: [aiChatSessions.ownerUserId],
+    references: [users.id],
+  }),
+}));
+
 export type Department = typeof departments.$inferSelect;
 export type NewDepartment = typeof departments.$inferInsert;
 export type Client = typeof clients.$inferSelect;
@@ -703,3 +737,5 @@ export type AiSheetSource = typeof aiSheetSources.$inferSelect;
 export type NewAiSheetSource = typeof aiSheetSources.$inferInsert;
 export type AiFileSource = typeof aiFileSources.$inferSelect;
 export type NewAiFileSource = typeof aiFileSources.$inferInsert;
+export type AiChatSession = typeof aiChatSessions.$inferSelect;
+export type NewAiChatSession = typeof aiChatSessions.$inferInsert;

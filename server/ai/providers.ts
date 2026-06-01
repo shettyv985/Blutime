@@ -9,6 +9,7 @@ export type AiStartResult = {
   taskId?: string;
   taskUrl?: string;
   status?: string;
+  attachments?: AiGeneratedAttachment[];
 };
 
 export type AiFileAttachment = {
@@ -18,9 +19,24 @@ export type AiFileAttachment = {
   contextText?: string;
 };
 
+export type AiGeneratedAttachment = {
+  filename: string;
+  contentType: string;
+  type: string;
+  url: string;
+};
+
 type ManusMessage = {
   type: string;
-  assistant_message?: { content?: string };
+  assistant_message?: {
+    content?: string;
+    attachments?: Array<{
+      content_type?: string;
+      filename?: string;
+      type?: string;
+      url?: string;
+    }>;
+  };
   error_message?: { content?: string };
   status_update?: { agent_status?: string; brief?: string; description?: string };
 };
@@ -56,8 +72,8 @@ Rules:
 QUESTION
 ${params.question}
 
-CURRENT BROWSER CHAT CONTEXT
-${params.conversationContext || "(No earlier messages in this browser session.)"}
+CURRENT SAVED CHAT CONTEXT
+${params.conversationContext || "(No earlier messages saved for this chat.)"}
 
 ${params.appContext}
 
@@ -77,6 +93,7 @@ function buildFollowUpPrompt(params: {
   sheetContexts: string[];
   fileContexts: string[];
   links: string[];
+  conversationContext?: string;
 }) {
   const hasRefreshedAppContext = !params.appContext.startsWith("No refreshed BluTime context");
   const hasNewContext =
@@ -86,6 +103,9 @@ function buildFollowUpPrompt(params: {
 ${params.question}
 
 Use the context and files already attached earlier in this Manus task. Do not ask for the same context again.
+
+CURRENT SAVED CHAT CONTEXT
+${params.conversationContext || "(No earlier messages saved for this chat.)"}
 
 ${hasNewContext ? `NEW CONTEXT ATTACHED TO THIS MESSAGE
 
@@ -286,6 +306,7 @@ export async function askAiBrain(params: {
           sheetContexts: params.sheetContexts,
           fileContexts: params.fileContexts ?? [],
           links: params.links ?? [],
+          conversationContext: params.conversationContext,
         })
       : buildInitialPrompt({
           question: params.question,
@@ -339,8 +360,18 @@ export async function getManusTaskMessages(taskId: string) {
   }
 
   const latestStatus = payload.messages.find((message) => message.type === "status_update")?.status_update;
-  const latestAnswer = payload.messages.find((message) => message.type === "assistant_message")?.assistant_message?.content;
+  const latestAssistantMessage = payload.messages.find((message) => message.type === "assistant_message")?.assistant_message;
+  const latestAnswer = latestAssistantMessage?.content;
   const latestError = payload.messages.find((message) => message.type === "error_message")?.error_message?.content;
+  const attachments =
+    latestAssistantMessage?.attachments
+      ?.filter((attachment) => attachment.url)
+      .map((attachment) => ({
+        filename: attachment.filename || "Manus file",
+        contentType: attachment.content_type || "application/octet-stream",
+        type: attachment.type || "file",
+        url: attachment.url as string,
+      })) ?? [];
 
   return {
     provider: "manus" as const,
@@ -348,5 +379,6 @@ export async function getManusTaskMessages(taskId: string) {
     statusText: latestStatus?.brief ?? latestStatus?.description ?? "",
     answer: latestAnswer ?? latestError ?? "",
     error: latestError,
+    attachments,
   };
 }

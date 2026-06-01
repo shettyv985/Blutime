@@ -32,6 +32,13 @@ type AiFileSummary = {
   hasExtractedText: boolean;
 };
 
+type AiGeneratedAttachment = {
+  filename: string;
+  contentType: string;
+  type: string;
+  url: string;
+};
+
 type AiResult = {
   provider: "manus" | "openai";
   mode?: "async" | "sync";
@@ -42,6 +49,7 @@ type AiResult = {
   statusText?: string;
   sheets?: AiSheetSummary[];
   files?: AiFileSummary[];
+  attachments?: AiGeneratedAttachment[];
 };
 
 type ChatMessage = {
@@ -51,6 +59,7 @@ type ChatMessage = {
   status?: string;
   sheets?: AiSheetSummary[];
   files?: AiFileSummary[];
+  attachments?: AiGeneratedAttachment[];
 };
 
 type SavedAiChat = {
@@ -80,6 +89,10 @@ function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatContentType(contentType: string) {
+  return contentType.split(";")[0]?.trim() || "file";
 }
 
 function conversationToText(messages: ChatMessage[]) {
@@ -117,6 +130,36 @@ function readSavedChats() {
   } catch {
     return [];
   }
+}
+
+function sortChatsByUpdatedAt(chats: SavedAiChat[]) {
+  return [...chats].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
+}
+
+async function fetchDbChats() {
+  const response = await fetch("/api/admin/ai/chats", { cache: "no-store" });
+  const payload = (await response.json().catch(() => null)) as { chats?: SavedAiChat[]; error?: string } | null;
+
+  if (!response.ok || !payload) {
+    throw new Error(payload?.error ?? "Could not load saved chats.");
+  }
+
+  return payload.chats ?? [];
+}
+
+async function createDbChat(provider: "manus" | "openai") {
+  const response = await fetch("/api/admin/ai/chats", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider }),
+  });
+  const payload = (await response.json().catch(() => null)) as { chat?: SavedAiChat; error?: string } | null;
+
+  if (!response.ok || !payload?.chat) {
+    throw new Error(payload?.error ?? "Could not create chat.");
+  }
+
+  return payload.chat;
 }
 
 function firstUserPrompt(messages: ChatMessage[]) {
@@ -328,9 +371,7 @@ export function AiMasterBrainPanel() {
 
   const selectedContextCount = selectedSourceIds.length + selectedFileIds.length + attachedLinks.length;
   const canSend = draft.trim().length >= 2 && !asking && !pendingAssistantId;
-  const sortedChats = [...savedChats].sort(
-    (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
-  );
+  const sortedChats = sortChatsByUpdatedAt(savedChats);
   const activeChat = savedChats.find((chat) => chat.id === activeChatId) ?? null;
 
   function restoreChat(chat: SavedAiChat) {
@@ -355,6 +396,66 @@ export function AiMasterBrainPanel() {
   function writeSavedChats(nextChats: SavedAiChat[]) {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(chatStorageKey, JSON.stringify(nextChats.slice(0, 40)));
+  }
+
+  async function persistChatToDatabase(chat: SavedAiChat) {
+    const response = await fetch(`/api/admin/ai/chats/${encodeURIComponent(chat.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: chat.title,
+        provider: chat.provider,
+        messages: chat.messages,
+        activeTaskId: chat.activeTaskId,
+        activeTaskUrl: chat.activeTaskUrl,
+        includeContextOnNextMessage: chat.includeContextOnNextMessage,
+        selectedSourceIds: chat.selectedSourceIds,
+        selectedFileIds: chat.selectedFileIds,
+        attachedLinks: chat.attachedLinks,
+      }),
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      setError(payload?.error ?? "Could not save chat.");
+    }
+  }
+
+  function buildChatSnapshot(patch: Partial<SavedAiChat> = {}) {
+    const now = new Date().toISOString();
+    const base = activeChat ?? createBlankChat();
+    const nextMessages = patch.messages ?? messages;
+    const firstPrompt = firstUserPrompt(nextMessages);
+
+    return {
+      ...base,
+      title:
+        patch.title ??
+        (base.title === "New chat" && firstPrompt ? chatTitleFromPrompt(firstPrompt) : base.title),
+      provider: patch.provider ?? provider,
+      messages: nextMessages,
+      activeTaskId: patch.activeTaskId !== undefined ? patch.activeTaskId : activeTaskId,
+      activeTaskUrl: patch.activeTaskUrl !== undefined ? patch.activeTaskUrl : activeTaskUrl,
+      includeContextOnNextMessage:
+        patch.includeContextOnNextMessage !== undefined
+          ? patch.includeContextOnNextMessage
+          : includeContextOnNextMessage,
+      selectedSourceIds: patch.selectedSourceIds ?? selectedSourceIds,
+      selectedFileIds: patch.selectedFileIds ?? selectedFileIds,
+      attachedLinks: patch.attachedLinks ?? attachedLinks,
+      updatedAt: now,
+    };
+  }
+
+  async function saveChatSnapshot(snapshot: SavedAiChat) {
+    setSavedChats((current) => {
+      const exists = current.some((chat) => chat.id === snapshot.id);
+      const next = sortChatsByUpdatedAt(exists ? current.map((chat) => (chat.id === snapshot.id ? snapshot : chat)) : [snapshot, ...current]);
+      writeSavedChats(next);
+      return next;
+    });
+
+    await persistChatToDatabase(snapshot);
   }
 
   async function loadSources() {
@@ -388,22 +489,47 @@ export function AiMasterBrainPanel() {
   }
 
   useEffect(() => {
-    const storedChats = readSavedChats();
-    const activeStoredId = window.localStorage.getItem(activeChatStorageKey);
-    const chatToRestore =
-      storedChats.find((chat) => chat.id === activeStoredId) ??
-      storedChats.sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())[0] ??
-      createBlankChat();
+    let cancelled = false;
 
-    const initialChats = storedChats.length > 0 ? storedChats : [chatToRestore];
-    setSavedChats(initialChats);
-    restoreChat(chatToRestore);
-    writeSavedChats(initialChats);
-    setChatHydrated(true);
+    async function loadSavedChats() {
+      try {
+        let dbChats = await fetchDbChats();
+
+        if (dbChats.length === 0) {
+          dbChats = [await createDbChat("manus")];
+        }
+
+        if (cancelled) return;
+
+        const activeStoredId = window.localStorage.getItem(activeChatStorageKey);
+        const sortedDbChats = sortChatsByUpdatedAt(dbChats);
+        const chatToRestore = sortedDbChats.find((chat) => chat.id === activeStoredId) ?? sortedDbChats[0];
+
+        setSavedChats(sortedDbChats);
+        restoreChat(chatToRestore);
+        writeSavedChats(sortedDbChats);
+      } catch (loadError) {
+        const localChats = readSavedChats();
+        const fallbackChat = localChats[0] ?? createBlankChat();
+        setSavedChats(localChats.length > 0 ? localChats : [fallbackChat]);
+        restoreChat(fallbackChat);
+        setError(loadError instanceof Error ? loadError.message : "Could not load saved chats.");
+      } finally {
+        if (!cancelled) setChatHydrated(true);
+      }
+    }
+
+    void loadSavedChats();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     if (!chatHydrated || !activeChatId) return;
+
+    let snapshotToSave: SavedAiChat | null = null;
 
     setSavedChats((current) => {
       const now = new Date().toISOString();
@@ -411,7 +537,7 @@ export function AiMasterBrainPanel() {
       const next = current.map((chat) => {
         if (chat.id !== activeChatId) return chat;
 
-        return {
+        snapshotToSave = {
           ...chat,
           title: chat.title === "New chat" && firstPrompt ? chatTitleFromPrompt(firstPrompt) : chat.title,
           provider,
@@ -424,11 +550,17 @@ export function AiMasterBrainPanel() {
           attachedLinks,
           updatedAt: messages.length > 0 ? now : chat.updatedAt,
         };
+
+        return snapshotToSave;
       });
 
       writeSavedChats(next);
       return next;
     });
+
+    if (snapshotToSave) {
+      void persistChatToDatabase(snapshotToSave);
+    }
   }, [
     activeChatId,
     activeTaskId,
@@ -461,17 +593,23 @@ export function AiMasterBrainPanel() {
         return;
       }
 
+      let nextMessages: ChatMessage[] = [];
       setMessages((current) =>
-        current.map((message) =>
+        (nextMessages = current.map((message) =>
           message.id === pendingAssistantId
             ? {
                 ...message,
                 content: payload.answer || payload.statusText || "Manus is still working...",
                 status: payload.status,
+                attachments: payload.attachments && payload.attachments.length > 0 ? payload.attachments : message.attachments,
               }
             : message
-        )
+        ))
       );
+
+      if (nextMessages.length > 0) {
+        void saveChatSnapshot(buildChatSnapshot({ messages: nextMessages }));
+      }
 
       if (payload.status === "stopped" || payload.status === "error") {
         setPendingAssistantId(null);
@@ -594,11 +732,13 @@ export function AiMasterBrainPanel() {
     };
     const conversationContext = conversationToText(messages);
     const shouldAttachContext = !activeTaskId || includeContextOnNextMessage || provider === "openai";
+    const pendingMessages = [...messages, userMessage, assistantMessage];
 
-    setMessages((current) => [...current, userMessage, assistantMessage]);
+    setMessages(pendingMessages);
     setDraft("");
     setAsking(true);
     setError("");
+    await saveChatSnapshot(buildChatSnapshot({ messages: pendingMessages }));
 
     const response = await fetch("/api/admin/ai/chat", {
       method: "POST",
@@ -610,7 +750,7 @@ export function AiMasterBrainPanel() {
         sourceIds: shouldAttachContext ? selectedSourceIds : [],
         fileIds: shouldAttachContext ? selectedFileIds : [],
         links: shouldAttachContext ? attachedLinks : [],
-        conversationContext: provider === "openai" ? conversationContext : "",
+        conversationContext,
         includeContext: shouldAttachContext,
       }),
     });
@@ -619,7 +759,9 @@ export function AiMasterBrainPanel() {
     setAsking(false);
 
     if (!response.ok || !payload) {
-      setMessages((current) => current.filter((message) => message.id !== assistantId));
+      const failedMessages = pendingMessages.filter((message) => message.id !== assistantId);
+      setMessages(failedMessages);
+      await saveChatSnapshot(buildChatSnapshot({ messages: failedMessages }));
       setError(payload?.error ?? "AI request failed.");
       return;
     }
@@ -627,8 +769,7 @@ export function AiMasterBrainPanel() {
     if (payload.taskId) setActiveTaskId(payload.taskId);
     if (payload.taskUrl) setActiveTaskUrl(payload.taskUrl);
 
-    setMessages((current) =>
-      current.map((message) =>
+    const answeredMessages = pendingMessages.map((message) =>
         message.id === assistantId
           ? {
               ...message,
@@ -636,9 +777,19 @@ export function AiMasterBrainPanel() {
               status: payload.status,
               sheets: payload.sheets,
               files: payload.files,
+              attachments: payload.attachments,
             }
           : message
-      )
+    );
+    setMessages(answeredMessages);
+
+    await saveChatSnapshot(
+      buildChatSnapshot({
+        messages: answeredMessages,
+        activeTaskId: payload.taskId ?? activeTaskId,
+        activeTaskUrl: payload.taskUrl ?? activeTaskUrl,
+        includeContextOnNextMessage: payload.provider === "manus" ? false : includeContextOnNextMessage,
+      })
     );
 
     if (payload.provider === "manus" && payload.taskId && payload.status !== "stopped" && payload.status !== "error") {
@@ -664,12 +815,21 @@ export function AiMasterBrainPanel() {
     restoreChat(chat);
   }
 
-  function startNewChat() {
-    const chat = createBlankChat();
-    const nextChats = [chat, ...savedChats];
-    setSavedChats(nextChats);
-    writeSavedChats(nextChats);
-    restoreChat(chat);
+  async function startNewChat() {
+    try {
+      const chat = await createDbChat(provider);
+      const nextChats = [chat, ...savedChats];
+      setSavedChats(nextChats);
+      writeSavedChats(nextChats);
+      restoreChat(chat);
+    } catch (createError) {
+      const chat = createBlankChat();
+      const nextChats = [chat, ...savedChats];
+      setSavedChats(nextChats);
+      writeSavedChats(nextChats);
+      restoreChat(chat);
+      setError(createError instanceof Error ? createError.message : "Could not create chat.");
+    }
   }
 
   function startRenamingChat(chat: SavedAiChat) {
@@ -681,15 +841,61 @@ export function AiMasterBrainPanel() {
     const title = renameDraft.trim();
     if (!title) return;
 
+    let renamedChat: SavedAiChat | null = null;
+
     setSavedChats((current) => {
       const next = current.map((chat) =>
-        chat.id === chatId ? { ...chat, title, updatedAt: new Date().toISOString() } : chat
+        chat.id === chatId ? (renamedChat = { ...chat, title, updatedAt: new Date().toISOString() }) : chat
       );
       writeSavedChats(next);
       return next;
     });
+
+    if (renamedChat) {
+      void persistChatToDatabase(renamedChat);
+    }
+
     setRenamingChatId(null);
     setRenameDraft("");
+  }
+
+  async function deleteChat(chatId: string) {
+    const chat = savedChats.find((item) => item.id === chatId);
+    const confirmed = window.confirm(`Delete "${chat?.title ?? "this chat"}"?`);
+    if (!confirmed) return;
+
+    setError("");
+
+    const response = await fetch(`/api/admin/ai/chats/${encodeURIComponent(chatId)}`, { method: "DELETE" });
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+    if (!response.ok) {
+      setError(payload?.error ?? "Could not delete chat.");
+      return;
+    }
+
+    const remainingChats = savedChats.filter((item) => item.id !== chatId);
+    let nextChats = remainingChats;
+    let chatToOpen = remainingChats[0] ?? null;
+
+    if (!chatToOpen) {
+      try {
+        chatToOpen = await createDbChat(provider);
+        nextChats = [chatToOpen];
+      } catch (createError) {
+        const fallback = createBlankChat();
+        chatToOpen = fallback;
+        nextChats = [fallback];
+        setError(createError instanceof Error ? createError.message : "Chat deleted, but could not create a new chat.");
+      }
+    }
+
+    setSavedChats(nextChats);
+    writeSavedChats(nextChats);
+
+    if (activeChatId === chatId || !activeChatId) {
+      restoreChat(chatToOpen);
+    }
   }
 
   const selectedSummary = useMemo(() => {
@@ -713,7 +919,7 @@ export function AiMasterBrainPanel() {
               Open Manus task
             </a>
           ) : null}
-          <button type="button" onClick={startNewChat} className="border border-[var(--border)] px-4 py-2 text-sm">
+          <button type="button" onClick={() => void startNewChat()} className="border border-[var(--border)] px-4 py-2 text-sm">
             New chat
           </button>
         </div>
@@ -779,6 +985,13 @@ export function AiMasterBrainPanel() {
                         <div className="flex flex-wrap gap-2">
                           <button type="button" onClick={() => startRenamingChat(chat)} className="text-xs text-[var(--accent-breeze)]">
                             Rename
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteChat(chat.id)}
+                            className="text-xs text-[var(--accent-sunset)]"
+                          >
+                            Delete
                           </button>
                           {selected ? <span className="text-xs text-muted">Current chat</span> : null}
                         </div>
@@ -1009,6 +1222,29 @@ export function AiMasterBrainPanel() {
                         {file.filename}
                       </span>
                     ))}
+                  </div>
+                ) : null}
+
+                {message.attachments && message.attachments.length > 0 ? (
+                  <div className="ai-generated-files mt-4 grid gap-3">
+                    <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted">Files from Manus</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {message.attachments.map((attachment, index) => (
+                        <a
+                          key={`${attachment.url}-${index}`}
+                          href={attachment.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          download={attachment.filename}
+                          className="ai-generated-file rounded-2xl border border-[var(--border-soft)] px-4 py-3"
+                        >
+                          <span className="block truncate text-base text-[var(--foreground)]">{attachment.filename}</span>
+                          <span className="mt-1 block font-mono text-xs uppercase tracking-[0.12em] text-muted">
+                            {formatContentType(attachment.contentType)} / open or download
+                          </span>
+                        </a>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
               </article>

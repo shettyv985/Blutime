@@ -1684,4 +1684,21 @@ main {
   .ai-response-table tbody tr:last-child td {
     border-bottom: 0;
   }
+
+  .ai-generated-file {
+    background:
+      linear-gradient(135deg, rgba(160, 195, 236, 0.1), rgba(255, 122, 23, 0.055)),
+      rgba(255, 255, 255, 0.035);
+    text-decoration: none;
+    transition:
+      border-color 160ms ease,
+      background 160ms ease;
+  }
+
+  .ai-generated-file:hover {
+    border-color: rgba(160, 195, 236, 0.42);
+    background:
+      linear-gradient(135deg, rgba(160, 195, 236, 0.16), rgba(255, 122, 23, 0.08)),
+      rgba(255, 255, 255, 0.05);
+  }
 }

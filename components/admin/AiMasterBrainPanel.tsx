@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 type SheetSource = {
   id: string;
@@ -53,7 +53,24 @@ type ChatMessage = {
   files?: AiFileSummary[];
 };
 
+type SavedAiChat = {
+  id: string;
+  title: string;
+  provider: "manus" | "openai";
+  messages: ChatMessage[];
+  activeTaskId: string | null;
+  activeTaskUrl: string | null;
+  includeContextOnNextMessage: boolean;
+  selectedSourceIds: string[];
+  selectedFileIds: string[];
+  attachedLinks: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 const maxFileBytes = 5 * 1024 * 1024;
+const chatStorageKey = "blu-time-ai-master-brain-chats";
+const activeChatStorageKey = "blu-time-ai-master-brain-active-chat";
 
 function createLocalId() {
   return crypto.randomUUID();
@@ -70,6 +87,214 @@ function conversationToText(messages: ChatMessage[]) {
     .slice(-10)
     .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
     .join("\n\n");
+}
+
+function createBlankChat(): SavedAiChat {
+  const now = new Date().toISOString();
+  return {
+    id: createLocalId(),
+    title: "New chat",
+    provider: "manus",
+    messages: [],
+    activeTaskId: null,
+    activeTaskUrl: null,
+    includeContextOnNextMessage: true,
+    selectedSourceIds: [],
+    selectedFileIds: [],
+    attachedLinks: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function readSavedChats() {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(chatStorageKey) ?? "[]") as SavedAiChat[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((chat) => chat?.id && chat?.title);
+  } catch {
+    return [];
+  }
+}
+
+function firstUserPrompt(messages: ChatMessage[]) {
+  return messages.find((message) => message.role === "user")?.content.trim() ?? "";
+}
+
+function chatTitleFromPrompt(prompt: string) {
+  if (!prompt) return "New chat";
+  return prompt.length > 54 ? `${prompt.slice(0, 54).trim()}...` : prompt;
+}
+
+function formatChatTimestamp(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
+}
+
+function statusLabel(status?: string) {
+  if (!status || status === "stopped") return null;
+  if (status === "running") return "working";
+  return status;
+}
+
+function isTableDivider(line: string) {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function tableCells(line: string) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function renderInline(text: string) {
+  const parts: ReactNode[] = [];
+  const pattern = /(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^)]+\)|https?:\/\/[^\s)]+)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+
+    const token = match[0];
+    const markdownLink = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
+
+    if (token.startsWith("**") && token.endsWith("**")) {
+      parts.push(<strong key={`${token}-${match.index}`}>{token.slice(2, -2)}</strong>);
+    } else if (markdownLink) {
+      parts.push(
+        <a key={`${token}-${match.index}`} href={markdownLink[2]} target="_blank" rel="noreferrer">
+          {markdownLink[1]}
+        </a>
+      );
+    } else {
+      parts.push(
+        <a key={`${token}-${match.index}`} href={token} target="_blank" rel="noreferrer">
+          {token}
+        </a>
+      );
+    }
+
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts;
+}
+
+function AiMarkdown({ text }: { text: string }) {
+  const lines = text.split(/\r?\n/);
+  const blocks: ReactNode[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      index += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith("|") && lines[index + 1] && isTableDivider(lines[index + 1])) {
+      const headers = tableCells(trimmed);
+      const rows: string[][] = [];
+      index += 2;
+
+      while (index < lines.length && lines[index].trim().startsWith("|")) {
+        rows.push(tableCells(lines[index]));
+        index += 1;
+      }
+
+      blocks.push(
+        <div key={`table-${index}`} className="ai-response-table-wrap">
+          <table className="ai-response-table">
+            <thead>
+              <tr>
+                {headers.map((header, headerIndex) => (
+                  <th key={`${header}-${headerIndex}`}>{renderInline(header)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIndex) => (
+                <tr key={`row-${rowIndex}`}>
+                  {headers.map((_, cellIndex) => (
+                    <td key={`cell-${cellIndex}`}>{renderInline(row[cellIndex] ?? "")}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{2,4})\s+(.+)$/);
+    if (heading) {
+      const Tag = heading[1].length === 2 ? "h3" : "h4";
+      blocks.push(<Tag key={`heading-${index}`}>{renderInline(heading[2])}</Tag>);
+      index += 1;
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed)) {
+      const ordered = /^\d+\.\s+/.test(trimmed);
+      const items: string[] = [];
+
+      while (index < lines.length) {
+        const item = lines[index].trim();
+        if (ordered && !/^\d+\.\s+/.test(item)) break;
+        if (!ordered && !/^[-*]\s+/.test(item)) break;
+        items.push(item.replace(/^([-*]|\d+\.)\s+/, ""));
+        index += 1;
+      }
+
+      const ListTag = ordered ? "ol" : "ul";
+      blocks.push(
+        <ListTag key={`list-${index}`}>
+          {items.map((item, itemIndex) => (
+            <li key={`${item}-${itemIndex}`}>{renderInline(item)}</li>
+          ))}
+        </ListTag>
+      );
+      continue;
+    }
+
+    if (trimmed.startsWith(">")) {
+      blocks.push(<blockquote key={`quote-${index}`}>{renderInline(trimmed.replace(/^>\s?/, ""))}</blockquote>);
+      index += 1;
+      continue;
+    }
+
+    const paragraph: string[] = [];
+    while (index < lines.length) {
+      const paragraphLine = lines[index].trim();
+      if (
+        !paragraphLine ||
+        paragraphLine.startsWith("|") ||
+        paragraphLine.startsWith(">") ||
+        paragraphLine.match(/^(#{2,4})\s+/) ||
+        paragraphLine.match(/^[-*]\s+/) ||
+        paragraphLine.match(/^\d+\.\s+/)
+      ) {
+        break;
+      }
+      paragraph.push(paragraphLine);
+      index += 1;
+    }
+
+    blocks.push(<p key={`paragraph-${index}`}>{renderInline(paragraph.join(" "))}</p>);
+  }
+
+  return <div className="ai-response">{blocks}</div>;
 }
 
 export function AiMasterBrainPanel() {
@@ -95,9 +320,42 @@ export function AiMasterBrainPanel() {
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState("");
+  const [chatHydrated, setChatHydrated] = useState(false);
+  const [savedChats, setSavedChats] = useState<SavedAiChat[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
 
   const selectedContextCount = selectedSourceIds.length + selectedFileIds.length + attachedLinks.length;
   const canSend = draft.trim().length >= 2 && !asking && !pendingAssistantId;
+  const sortedChats = [...savedChats].sort(
+    (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+  );
+  const activeChat = savedChats.find((chat) => chat.id === activeChatId) ?? null;
+
+  function restoreChat(chat: SavedAiChat) {
+    setActiveChatId(chat.id);
+    setProvider(chat.provider);
+    setMessages(chat.messages);
+    setActiveTaskId(chat.activeTaskId);
+    setActiveTaskUrl(chat.activeTaskUrl);
+    setPendingAssistantId(null);
+    setSelectedSourceIds(chat.selectedSourceIds ?? []);
+    setSelectedFileIds(chat.selectedFileIds ?? []);
+    setAttachedLinks(chat.attachedLinks ?? []);
+    setIncludeContextOnNextMessage(chat.includeContextOnNextMessage);
+    setDraft("");
+    setError("");
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(activeChatStorageKey, chat.id);
+    }
+  }
+
+  function writeSavedChats(nextChats: SavedAiChat[]) {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(chatStorageKey, JSON.stringify(nextChats.slice(0, 40)));
+  }
 
   async function loadSources() {
     setLoadingSources(true);
@@ -128,6 +386,61 @@ export function AiMasterBrainPanel() {
     setFiles(payload.files ?? []);
     setSelectedFileIds((current) => current.filter((id) => payload.files?.some((file) => file.id === id)));
   }
+
+  useEffect(() => {
+    const storedChats = readSavedChats();
+    const activeStoredId = window.localStorage.getItem(activeChatStorageKey);
+    const chatToRestore =
+      storedChats.find((chat) => chat.id === activeStoredId) ??
+      storedChats.sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())[0] ??
+      createBlankChat();
+
+    const initialChats = storedChats.length > 0 ? storedChats : [chatToRestore];
+    setSavedChats(initialChats);
+    restoreChat(chatToRestore);
+    writeSavedChats(initialChats);
+    setChatHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!chatHydrated || !activeChatId) return;
+
+    setSavedChats((current) => {
+      const now = new Date().toISOString();
+      const firstPrompt = firstUserPrompt(messages);
+      const next = current.map((chat) => {
+        if (chat.id !== activeChatId) return chat;
+
+        return {
+          ...chat,
+          title: chat.title === "New chat" && firstPrompt ? chatTitleFromPrompt(firstPrompt) : chat.title,
+          provider,
+          messages,
+          activeTaskId,
+          activeTaskUrl,
+          includeContextOnNextMessage,
+          selectedSourceIds,
+          selectedFileIds,
+          attachedLinks,
+          updatedAt: messages.length > 0 ? now : chat.updatedAt,
+        };
+      });
+
+      writeSavedChats(next);
+      return next;
+    });
+  }, [
+    activeChatId,
+    activeTaskId,
+    activeTaskUrl,
+    attachedLinks,
+    chatHydrated,
+    includeContextOnNextMessage,
+    messages,
+    provider,
+    selectedFileIds,
+    selectedSourceIds,
+  ]);
 
   useEffect(() => {
     void loadSources();
@@ -345,13 +658,38 @@ export function AiMasterBrainPanel() {
     setSelectedFileIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   }
 
+  function openSavedChat(chatId: string) {
+    const chat = savedChats.find((item) => item.id === chatId);
+    if (!chat) return;
+    restoreChat(chat);
+  }
+
   function startNewChat() {
-    setMessages([]);
-    setActiveTaskId(null);
-    setActiveTaskUrl(null);
-    setPendingAssistantId(null);
-    setIncludeContextOnNextMessage(true);
-    setError("");
+    const chat = createBlankChat();
+    const nextChats = [chat, ...savedChats];
+    setSavedChats(nextChats);
+    writeSavedChats(nextChats);
+    restoreChat(chat);
+  }
+
+  function startRenamingChat(chat: SavedAiChat) {
+    setRenamingChatId(chat.id);
+    setRenameDraft(chat.title);
+  }
+
+  function saveChatName(chatId: string) {
+    const title = renameDraft.trim();
+    if (!title) return;
+
+    setSavedChats((current) => {
+      const next = current.map((chat) =>
+        chat.id === chatId ? { ...chat, title, updatedAt: new Date().toISOString() } : chat
+      );
+      writeSavedChats(next);
+      return next;
+    });
+    setRenamingChatId(null);
+    setRenameDraft("");
   }
 
   const selectedSummary = useMemo(() => {
@@ -360,13 +698,13 @@ export function AiMasterBrainPanel() {
   }, [attachedLinks.length, selectedContextCount, selectedFileIds.length, selectedSourceIds.length]);
 
   return (
-    <section className="card mt-4 p-6 sm:p-8">
+    <section className="card module-theme-panel mt-4 p-6 sm:p-8">
       <div className="flex flex-wrap items-start justify-between gap-5">
         <div className="max-w-3xl">
           <p className="font-mono text-xs uppercase tracking-[0.14em] text-[var(--accent-breeze)]">ai</p>
           <h2 className="mt-2 text-4xl font-normal">AI Master Brain</h2>
           <p className="mt-3 text-base text-muted">
-            A private mini chat for BluTime context, Google Sheets, saved files, and links. Chat history stays in this browser session only.
+            A private mini chat for BluTime context, Google Sheets, saved files, and links. Chats are saved in this browser.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -385,6 +723,73 @@ export function AiMasterBrainPanel() {
 
       <div className="mt-7 grid gap-4 xl:grid-cols-[420px_1fr]">
         <aside className="grid gap-4">
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted">saved chats</p>
+                <h3 className="mt-2 text-2xl font-normal">Sessions</h3>
+              </div>
+              <span className="text-sm text-muted">{savedChats.length}</span>
+            </div>
+
+            <div className="mt-4 grid max-h-[320px] gap-2 overflow-y-auto pr-1">
+              {sortedChats.map((chat) => {
+                const selected = chat.id === activeChatId;
+                const messageCount = chat.messages.length;
+
+                return (
+                  <div
+                    key={chat.id}
+                    className={`ai-chat-session ${selected ? "ai-chat-session-active" : ""}`}
+                  >
+                    {renamingChatId === chat.id ? (
+                      <div className="grid gap-2">
+                        <input
+                          value={renameDraft}
+                          onChange={(event) => setRenameDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") saveChatName(chat.id);
+                            if (event.key === "Escape") setRenamingChatId(null);
+                          }}
+                          className="border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm"
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => saveChatName(chat.id)} className="border border-[var(--border)] px-3 py-1 text-xs">
+                            Save
+                          </button>
+                          <button type="button" onClick={() => setRenamingChatId(null)} className="border border-[var(--border)] px-3 py-1 text-xs text-muted">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openSavedChat(chat.id)}
+                          disabled={asking || Boolean(pendingAssistantId)}
+                          className="min-w-0 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <span className="block truncate text-base">{chat.title}</span>
+                          <span className="mt-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
+                            {messageCount} messages / {chat.provider} / {formatChatTimestamp(chat.updatedAt)}
+                          </span>
+                        </button>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => startRenamingChat(chat)} className="text-xs text-[var(--accent-breeze)]">
+                            Rename
+                          </button>
+                          {selected ? <span className="text-xs text-muted">Current chat</span> : null}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] p-5">
             <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted">model</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
@@ -542,10 +947,10 @@ export function AiMasterBrainPanel() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-soft)] pb-4">
             <div>
               <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted">chat</p>
-              <h3 className="mt-2 text-2xl font-normal">One-to-one session</h3>
+              <h3 className="mt-2 text-2xl font-normal">{activeChat?.title ?? "One-to-one session"}</h3>
             </div>
             <span className="rounded-full border border-[var(--border-soft)] px-4 py-2 text-sm text-muted">
-              {activeTaskId ? "Manus thread active" : "No saved chat history"}
+              {activeTaskId ? "Manus thread active" : "Local saved chat"}
             </span>
           </div>
 
@@ -562,17 +967,29 @@ export function AiMasterBrainPanel() {
             {messages.map((message) => (
               <article
                 key={message.id}
-                className={`rounded-2xl border p-5 ${
+                className={`ai-chat-message rounded-2xl border p-5 ${
                   message.role === "user"
-                    ? "border-[var(--accent-breeze)] bg-[rgba(160,195,236,0.08)]"
-                    : "border-[var(--border-soft)] bg-[var(--background)]"
+                    ? "ai-chat-user border-[var(--accent-breeze)] bg-[rgba(160,195,236,0.08)]"
+                    : "ai-chat-assistant border-[var(--border-soft)] bg-[var(--background)]"
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted">{message.role}</p>
-                  {message.status ? <span className="text-xs text-muted">{message.status}</span> : null}
+                  <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted">
+                    {message.role === "assistant" ? "AI Master Brain" : "You"}
+                  </p>
+                  {statusLabel(message.status) ? (
+                    <span className="rounded-full border border-[var(--border-soft)] px-3 py-1 text-xs text-muted">
+                      {statusLabel(message.status)}
+                    </span>
+                  ) : null}
                 </div>
-                <div className="mt-3 whitespace-pre-wrap text-base leading-7">{message.content}</div>
+                <div className="mt-3">
+                  {message.role === "assistant" ? (
+                    <AiMarkdown text={message.content} />
+                  ) : (
+                    <div className="whitespace-pre-wrap text-base leading-7">{message.content}</div>
+                  )}
+                </div>
 
                 {message.sheets && message.sheets.length > 0 ? (
                   <div className="mt-4 grid gap-2">

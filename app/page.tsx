@@ -24,7 +24,7 @@ export default async function Home() {
   const allowAiBrain = canUseAiMasterBrain(user);
   const todayRange = todayRangeInIst();
 
-  const [[departmentTotal], [categoryTotal], departmentRows, userRows, activeWorkRows, todayLogRows] = await Promise.all([
+  const [[departmentTotal], [categoryTotal], departmentRows, userRows, teamRows, activeWorkRows, todayLogRows] = await Promise.all([
     db.select({ value: count() }).from(departments),
     db.select({ value: count() }).from(categories),
     db
@@ -53,6 +53,17 @@ export default async function Home() {
           .leftJoin(departments, eq(users.departmentId, departments.id))
           .orderBy(asc(users.name))
       : Promise.resolve([]),
+    db
+      .select({
+        id: users.id,
+        name: users.name,
+        departmentName: departments.name,
+        basecampPersonId: users.basecampPersonId,
+      })
+      .from(users)
+      .leftJoin(departments, eq(users.departmentId, departments.id))
+      .where(eq(users.isActive, true))
+      .orderBy(asc(users.name)),
     allowCompanyDashboard
       ? db
           .select({
@@ -107,6 +118,12 @@ export default async function Home() {
       categoryCount={categoryTotal?.value ?? 0}
       departments={departmentRows}
       users={userRows}
+      teamMembers={teamRows.map((teamMember) => ({
+        id: teamMember.id,
+        name: teamMember.name,
+        departmentName: teamMember.departmentName,
+        hasBasecampId: Boolean(teamMember.basecampPersonId),
+      }))}
       canManageUsers={allowUserManagement}
       canManagePlanner={allowPlanner}
       canUseAiBrain={allowAiBrain}

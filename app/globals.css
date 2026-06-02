@@ -1539,6 +1539,13 @@ main {
     background: rgba(196, 181, 253, 0.04) !important;
   }
 
+  .module-theme-item.team-member-selected {
+    border-color: rgba(160, 195, 236, 0.48) !important;
+    background:
+      linear-gradient(90deg, rgba(160, 195, 236, 0.12), rgba(9, 8, 15, 0.72) 60%),
+      rgba(9, 8, 15, 0.72) !important;
+  }
+
   .module-theme-item.task-tone-overdue {
     border-color: color-mix(in srgb, var(--accent-sunset) 45%, #161b26) !important;
     background:

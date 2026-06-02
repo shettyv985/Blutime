@@ -760,7 +760,8 @@ export function getEmployeePlannerItems(
 
         for (const row of rows) {
           if (row.role !== targetRole) continue;
-          if (!personMatches(row.person, employeeName)) continue;
+          const matchesPerson = row.role === "Production" && row.person === "Crew" ? true : personMatches(row.person, employeeName);
+          if (!matchesPerson) continue;
 
           for (const [dayIndex, day] of week.days.entries()) {
             const task = row.tasks[day.label];

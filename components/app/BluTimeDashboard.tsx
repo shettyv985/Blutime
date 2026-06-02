@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AiMasterBrainPanel } from "@/components/admin/AiMasterBrainPanel";
 import { AdminReportsPanel } from "@/components/admin/AdminReportsPanel";
@@ -41,6 +41,27 @@ type ManagedUser = {
   isActive: boolean;
 };
 
+type TeamMember = {
+  id: string;
+  name: string;
+  departmentName: string | null;
+  hasBasecampId: boolean;
+};
+
+type TeamBasecampTask = {
+  id: string;
+  title: string;
+  appUrl: string | null;
+  dueOn: string | null;
+  projectId: string | null;
+  projectName: string;
+  parentId: string | null;
+  parentTitle: string | null;
+  isChild: boolean;
+  overdue: boolean;
+  dueStatus?: "overdue" | "today" | "upcoming" | "undated";
+};
+
 type ActiveWork = {
   id: string;
   userName: string;
@@ -67,6 +88,7 @@ type DashboardProps = {
   departmentCount: number;
   departments: DepartmentOption[];
   users: ManagedUser[];
+  teamMembers: TeamMember[];
   canManageUsers: boolean;
   canManagePlanner: boolean;
   canUseAiBrain: boolean;
@@ -75,7 +97,7 @@ type DashboardProps = {
   todayLogs: TodayLog[];
 };
 
-type DashboardModule = "reports" | "planner" | "tasks" | "users" | "ai";
+type DashboardModule = "reports" | "planner" | "tasks" | "team" | "users" | "ai";
 
 const plannerMonthStorageKey = "blu-time-planner-month";
 
@@ -115,9 +137,33 @@ const MODULE_META = {
   reports: { icon: "ti-chart-bar",      description: "Work logs, filters & PDF export" },
   planner: { icon: "ti-calendar-month", description: "Month-wise pod plan & CSV" },
   tasks:   { icon: "ti-check",          description: "Today and overdue tasks" },
+  team:    { icon: "ti-search",         description: "Search people and open their tasks" },
   users:   { icon: "ti-users",          description: "Create & edit employee logins" },
   ai:      { icon: "ti-brain",          description: "Ask across BluTime data" },
 };
+
+function isAccountManagerDepartment(departmentName: string | null) {
+  return departmentName?.toLowerCase().includes("account manager") ?? false;
+}
+
+function teamTaskToneClass(task: TeamBasecampTask) {
+  if (task.dueStatus === "overdue" || task.overdue) return "task-tone-overdue";
+  if (task.dueStatus === "today") return "task-tone-today";
+  return "";
+}
+
+function teamTaskStatusClass(task: TeamBasecampTask) {
+  if (task.dueStatus === "overdue" || task.overdue) return "task-status-overdue";
+  if (task.dueStatus === "today") return "task-status-today";
+  return "border-[var(--border-soft)] text-muted";
+}
+
+function teamTaskStatusLabel(task: TeamBasecampTask) {
+  if (task.dueStatus === "overdue" || task.overdue) return "Overdue";
+  if (task.dueStatus === "today") return "Due today";
+  if (task.dueStatus === "upcoming") return "Upcoming";
+  return "No due date";
+}
 
 export function BluTimeDashboard({
   user,
@@ -125,6 +171,7 @@ export function BluTimeDashboard({
   departmentCount,
   departments,
   users,
+  teamMembers,
   canManageUsers,
   canManagePlanner,
   canUseAiBrain,
@@ -139,12 +186,16 @@ export function BluTimeDashboard({
   const hasBasecampId = Boolean(user.basecampPersonId);
   const isEmployeeOnly =
     !canViewCompanyDashboard && !canManagePlanner && !canManageUsers && !canUseAiBrain;
+  const isAccountManager = isAccountManagerDepartment(user.departmentName);
+  const showPersonalPlannerHighlights = isEmployeeOnly && !isAccountManager;
+  const showModuleNavigation = !isEmployeeOnly || isAccountManager;
   const employeePlannerItems = getEmployeePlannerItems(employeePlannerMonth, user.name, user.departmentName);
 
   const modules: Array<{ id: DashboardModule; label: string }> = [
     ...(canViewCompanyDashboard ? [{ id: "reports" as const, label: "Reports" }] : []),
-    ...(canManagePlanner        ? [{ id: "planner" as const, label: "Planner" }] : []),
-    ...(!isEmployeeOnly && hasBasecampId ? [{ id: "tasks" as const, label: "Tasks" }] : []),
+    ...(canManagePlanner || isAccountManager ? [{ id: "planner" as const, label: "Planner" }] : []),
+    ...(showModuleNavigation && (hasBasecampId || isAccountManager) ? [{ id: "tasks" as const, label: "Tasks" }] : []),
+    ...(canManagePlanner || isAccountManager ? [{ id: "team" as const, label: "Team" }] : []),
     ...(canManageUsers          ? [{ id: "users"   as const, label: "Users"   }] : []),
     ...(canUseAiBrain           ? [{ id: "ai"      as const, label: "AI"      }] : []),
   ];
@@ -268,14 +319,14 @@ export function BluTimeDashboard({
           </div>
 
           {/* ── Cols 2–3 ── */}
-          {isEmployeeOnly ? (
+          {showPersonalPlannerHighlights ? (
             <EmployeePlannerHighlights
               departmentName={user.departmentName}
               items={employeePlannerItems}
               monthKey={employeePlannerMonth}
               onMonthChange={changeEmployeePlannerMonth}
             />
-          ) : (
+          ) : showModuleNavigation ? (
             <div
               className="md:col-span-2"
               style={{
@@ -443,26 +494,245 @@ export function BluTimeDashboard({
                 </p>
               )}
             </div>
-          )}
+          ) : null}
         </div>
 
         {canViewCompanyDashboard ? (
           <CompanyTodayOverview activeWork={activeWork} todayLogs={todayLogs} />
         ) : null}
 
-        {isEmployeeOnly ? <BasecampTaskPreview hasBasecampId={hasBasecampId} /> : null}
+        {showPersonalPlannerHighlights ? <BasecampTaskPreview hasBasecampId={hasBasecampId} /> : null}
         {activeModule === "tasks" ? <BasecampTaskPreview hasBasecampId={hasBasecampId} /> : null}
 
         <EmployeeTimerPanel hasBasecampId={hasBasecampId} showRecentLogs={!isEmployeeOnly} />
 
-        {isEmployeeOnly ? <EmployeeLogsPanel /> : null}
+        {showPersonalPlannerHighlights ? <EmployeeLogsPanel /> : null}
 
         {activeModule === "reports" ? <AdminReportsPanel /> : null}
         {activeModule === "planner" ? <PlannerFoundationPanel /> : null}
+        {activeModule === "team" ? (
+          <TeamBasecampTasksPanel members={teamMembers} />
+        ) : null}
         {activeModule === "users"   ? <UserManagementPanel departments={departments} users={users} /> : null}
         {activeModule === "ai"      ? <AiMasterBrainPanel /> : null}
       </section>
     </main>
+  );
+}
+
+function PlannerTaskCards({ emptyText, items }: { emptyText: string; items: EmployeePlannerItem[] }) {
+  return items.length > 0 ? (
+    <div className="scroll-area mt-5 grid max-h-[520px] gap-3 overflow-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
+      {items.map((item, index) => (
+        <article
+          key={`${item.podName}-${item.weekName}-${item.client}-${item.role}-${item.dateLabel}-${index}`}
+          className={`planner-employee-card planner-employee-${item.role.toLowerCase()}${item.dueSoon ? " planner-employee-due-soon" : ""}`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-mono text-xs uppercase">{item.dateLabel}</span>
+            <span className="rounded-full border border-current px-2 py-1 text-xs">{item.role}</span>
+          </div>
+          <h3 className="mt-3 text-xl font-normal">{item.client}</h3>
+          <p className="mt-1 text-sm">{item.service} / {item.podName} / {item.weekName}</p>
+          <p className="mt-3 whitespace-pre-wrap text-sm">{item.task}</p>
+        </article>
+      ))}
+    </div>
+  ) : (
+    <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
+      {emptyText}
+    </div>
+  );
+}
+
+function TeamBasecampTasksPanel({ members }: { members: TeamMember[] }) {
+  const [query, setQuery] = useState("");
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<TeamBasecampTask[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [taskMessage, setTaskMessage] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const matchedMembers = useMemo(() => {
+    const source = members;
+    if (!normalizedQuery) return source.slice(0, 10);
+
+    return source
+      .filter((member) =>
+        `${member.name} ${member.departmentName ?? ""}`.toLowerCase().includes(normalizedQuery)
+      )
+      .slice(0, 20);
+  }, [normalizedQuery, members]);
+  const selectedMember =
+    members.find((member) => member.id === selectedMemberId) ??
+    (matchedMembers.length === 1 ? matchedMembers[0] : null);
+  const taskCounts = {
+    overdue: tasks.filter((task) => task.dueStatus === "overdue" || task.overdue).length,
+    today: tasks.filter((task) => task.dueStatus === "today").length,
+    upcoming: tasks.filter((task) => task.dueStatus === "upcoming").length,
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMemberTasks(member: TeamMember) {
+      setLoadingTasks(true);
+      setTaskMessage("");
+      setTasks([]);
+
+      const response = await fetch(`/api/basecamp/tasks?userId=${encodeURIComponent(member.id)}`, { cache: "no-store" });
+      const payload = (await response.json().catch(() => null)) as {
+        tasks?: TeamBasecampTask[];
+        warning?: string;
+        error?: string;
+      } | null;
+
+      if (cancelled) return;
+
+      setLoadingTasks(false);
+      setTasks(payload?.tasks ?? []);
+      setTaskMessage(payload?.error ?? payload?.warning ?? "");
+    }
+
+    if (!selectedMember) {
+      setTasks([]);
+      setTaskMessage("");
+      setLoadingTasks(false);
+      return;
+    }
+
+    void loadMemberTasks(selectedMember);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMember?.id]);
+
+  function openMember(member: TeamMember) {
+    setSelectedMemberId(member.id);
+  }
+
+  return (
+    <section className="module-theme-panel mt-5 p-5 sm:p-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">Team</p>
+          <h2 className="mt-2 text-3xl font-normal">Search Basecamp tasks</h2>
+          <p className="mt-2 text-base text-muted">Open a person to see their assigned Basecamp tasks.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-sm">
+          <span className="rounded-full border px-3 py-2 task-status-overdue">{taskCounts.overdue} overdue</span>
+          <span className="rounded-full border px-3 py-2 task-status-today">{taskCounts.today} today</span>
+          <span className="rounded-full border border-[var(--border-soft)] px-3 py-2 text-muted">{taskCounts.upcoming} upcoming</span>
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setSelectedMemberId(null);
+          }}
+          placeholder="Search Durga, Bibin, Lekshmi, Anandu..."
+          className="w-full border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base"
+        />
+      </div>
+
+      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {matchedMembers.map((member) => {
+          const selected = selectedMember?.id === member.id;
+          return (
+            <button
+              key={member.id}
+              type="button"
+              onClick={() => openMember(member)}
+              className={`module-theme-item flex items-center justify-between gap-3 border px-4 py-3 text-left ${selected ? "team-member-selected" : ""}`}
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-base text-[var(--foreground)]">{member.name}</span>
+                <span className="mt-1 block font-mono text-xs uppercase tracking-[0.12em] text-muted">
+                  {member.departmentName ?? "Team member"}{member.hasBasecampId ? "" : " / no Basecamp ID"}
+                </span>
+              </span>
+              <span className="rounded-full border border-[var(--border-soft)] px-3 py-1 text-xs text-muted">
+                Open
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {matchedMembers.length === 0 ? (
+        <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
+          No team member found for this search.
+        </div>
+      ) : null}
+
+      {selectedMember ? (
+        <div className="mt-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">Opened member</p>
+              <h3 className="mt-2 text-2xl font-normal">{selectedMember.name}</h3>
+              <p className="mt-1 text-base text-muted">{selectedMember.departmentName ?? "Team member"}</p>
+            </div>
+            <span className="rounded-full border border-[var(--border-soft)] px-4 py-2 text-sm text-muted">
+              {tasks.length} Basecamp tasks
+            </span>
+          </div>
+
+          {loadingTasks ? <p className="mt-4 text-sm text-muted">Loading Basecamp tasks...</p> : null}
+          {taskMessage ? <p className="mt-4 text-sm text-muted">{taskMessage}</p> : null}
+
+          {!loadingTasks && !taskMessage && tasks.length === 0 ? (
+            <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
+              No assigned Basecamp tasks found for this person.
+            </div>
+          ) : null}
+
+          {tasks.length > 0 ? (
+            <div className="mt-5 grid gap-3">
+              {tasks.map((task) => (
+                <article
+                  key={`${task.projectId ?? "project"}-${task.id}-${task.parentId ?? "parent"}`}
+                  className={`module-theme-item border border-[var(--border)] p-5 ${teamTaskToneClass(task)}`}
+                >
+                  <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                        <span>{task.projectName}</span>
+                        <span className={`rounded-full border px-2 py-1 ${teamTaskStatusClass(task)}`}>
+                          {teamTaskStatusLabel(task)}{task.dueOn ? `: ${task.dueOn}` : ""}
+                        </span>
+                        {task.isChild ? <span>Child step</span> : null}
+                      </div>
+                      <h4 className="mt-3 text-2xl font-normal">{task.title}</h4>
+                      {task.parentTitle ? <p className="mt-1 text-sm text-muted">{task.parentTitle}</p> : null}
+                    </div>
+
+                    {task.appUrl ? (
+                      <a
+                        href={task.appUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-block rounded-full border border-[var(--border)] px-4 py-2 text-sm lg:justify-self-end"
+                      >
+                        Open in Basecamp
+                      </a>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
+          Search and open a team member to view their Basecamp tasks.
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -494,22 +764,7 @@ function EmployeePlannerHighlights({
       </div>
 
       {items.length > 0 ? (
-        <div className="scroll-area mt-5 grid max-h-[360px] gap-3 overflow-auto pr-1 md:grid-cols-2">
-          {items.map((item, index) => (
-            <article
-              key={`${item.podName}-${item.weekName}-${item.client}-${item.role}-${item.dateLabel}-${index}`}
-              className={`planner-employee-card planner-employee-${item.role.toLowerCase()}${item.dueSoon ? " planner-employee-due-soon" : ""}`}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-mono text-xs uppercase">{item.dateLabel}</span>
-                <span className="rounded-full border border-current px-2 py-1 text-xs">{item.role}</span>
-              </div>
-              <h3 className="mt-3 text-xl font-normal">{item.client}</h3>
-              <p className="mt-1 text-sm">{item.service} / {item.podName} / {item.weekName}</p>
-              <p className="mt-3 whitespace-pre-wrap text-sm">{item.task}</p>
-            </article>
-          ))}
-        </div>
+        <PlannerTaskCards items={items} emptyText="No planner rows found for this month." />
       ) : (
         <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
           No planner rows found for this month.

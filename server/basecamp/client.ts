@@ -45,6 +45,10 @@ export type BacklogBasecampTask = NormalizedBasecampTask & {
   dueStatus: "overdue" | "today" | "upcoming";
 };
 
+export type AssignedBasecampTask = NormalizedBasecampTask & {
+  dueStatus: "overdue" | "today" | "upcoming" | "undated";
+};
+
 export type BasecampProject = {
   id: number | string;
   name: string;
@@ -266,12 +270,67 @@ function flattenBacklogTodos(todos: BasecampTodo[]) {
   return tasks.sort((left, right) => (left.dueOn ?? "").localeCompare(right.dueOn ?? ""));
 }
 
+function normalizeAssignedTodo(todo: BasecampTodo, parent?: BasecampTodo): AssignedBasecampTask | null {
+  const dueOn = todo.due_on ?? parent?.due_on ?? null;
+  const bucket = todo.bucket ?? parent?.bucket ?? null;
+  const parentInfo = parent ?? todo.parent ?? null;
+  const id = String(todo.id);
+  const today = todayKey();
+
+  return {
+    id,
+    title: basecampPlainText(todo.title ?? todo.content, "Untitled Basecamp task"),
+    appUrl: todo.app_url ?? null,
+    dueOn,
+    projectId: bucket?.id ? String(bucket.id) : null,
+    projectName: basecampPlainText(bucket?.name, "Basecamp project"),
+    parentId: parentInfo?.id ? String(parentInfo.id) : null,
+    parentTitle: parentInfo?.title ? basecampPlainText(parentInfo.title, "Untitled parent") : null,
+    isChild: Boolean(parent),
+    overdue: Boolean(dueOn && dueOn < today),
+    dueStatus: !dueOn ? "undated" : dueOn < today ? "overdue" : dueOn === today ? "today" : "upcoming",
+  };
+}
+
+function flattenAssignedTodos(todos: BasecampTodo[]) {
+  const tasks: AssignedBasecampTask[] = [];
+  const statusWeight: Record<AssignedBasecampTask["dueStatus"], number> = {
+    overdue: 0,
+    today: 1,
+    upcoming: 2,
+    undated: 3,
+  };
+
+  for (const todo of todos) {
+    const normalizedParent = normalizeAssignedTodo(todo);
+    if (normalizedParent) tasks.push(normalizedParent);
+
+    for (const child of todo.children ?? []) {
+      const normalizedChild = normalizeAssignedTodo(child, todo);
+      if (normalizedChild) tasks.push(normalizedChild);
+    }
+  }
+
+  return tasks.sort((left, right) => {
+    if (left.dueStatus !== right.dueStatus) return statusWeight[left.dueStatus] - statusWeight[right.dueStatus];
+    return (left.dueOn ?? "9999-12-31").localeCompare(right.dueOn ?? "9999-12-31");
+  });
+}
+
 export async function getAssignedTasksForPerson(basecampPersonId: string) {
   const payload = await basecampFetch<{ todos?: BasecampTodo[] }>(
     `/reports/todos/assigned/${basecampPersonId}.json?group_by=date`
   );
 
   return flattenTodos(payload.todos ?? []);
+}
+
+export async function getAllAssignedTasksForPerson(basecampPersonId: string) {
+  const payload = await basecampFetch<{ todos?: BasecampTodo[] }>(
+    `/reports/todos/assigned/${basecampPersonId}.json?group_by=date`
+  );
+
+  return flattenAssignedTodos(payload.todos ?? []);
 }
 
 export async function getBacklogTasksForPerson(basecampPersonId: string) {

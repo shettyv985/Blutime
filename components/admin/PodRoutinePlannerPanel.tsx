@@ -50,6 +50,18 @@ type RoleRow = {
   isFirst: boolean;
 };
 
+type ProductionAllocation = {
+  allocations: Record<string, Record<string, number>>;
+  remaining: Record<string, number>;
+};
+
+type ProductionPlanClient = {
+  client: PodClient;
+  carryover: number;
+  remaining: number;
+  total: number;
+};
+
 export type EmployeePlannerItem = {
   client: string;
   dateLabel: string;
@@ -69,6 +81,16 @@ type BufferRow = {
   action: string;
   who: string;
   output: string;
+};
+
+type OutputSummaryRow = {
+  client: string;
+  service: string;
+  plannedVideos: number;
+  plannedStatics: number;
+  requiredVideos: number;
+  requiredStatics: number;
+  remainingVideos: number;
 };
 
 type XmlCell = {
@@ -123,13 +145,14 @@ const pods = {
       ["Activbase", "PM", "Fathima", "Akhil", "Adithyan", 5, 10, "cross-pod writer"],
       ["Kia", "PM+SM", "Naveen", "Akhil", "Adithyan", 12, 10, "SM: +4 statics +4 branding vids"],
       ["Mother's Food", "PM", "Naveen/Durga", "Shwetha", "Adithyan", 5, 10, ""],
-      ["Memory Train", "PM", "Naveen", "Akhil", "Adithyan", 5, 10, ""],
+      ["Memory Train", "PM", "Naveen", "Akhil", "Adithyan", 5, 10, "no shoot - client footage / old clips"],
       ["Pawan", "PM+SM", "Naveen", "Akhil", "Adithyan", 12, 10, "SM: +10 statics +5 branding vids"],
       ["Heal in Kerala", "PM", "Fathima", "Shwetha", "Adithyan", 12, 10, "cross-pod writer"],
     ],
     flags: [
       "⚠️ Naveen handles Kia, Mother's Food, Memory Train, Pawan — 4 clients. Monitor weekly load carefully.",
       "⚠️ Friday shoot shared with Reshma pod — max 2–3 reels total, split equally (~1–2 each pod).",
+      "ℹ️ Memory Train: client footage / old clips — Writer → Editor direct, no production shoot needed.",
     ],
   },
   RELSA: {
@@ -140,7 +163,7 @@ const pods = {
       Editors: "Bibin, Jabin — 3 videos/day each",
     },
     clients: [
-      ["Chakolas", "PM+SM", "Rohith (cross)", "Anandu KR (cross)", "Bibin", 15, 12, "SM: +3 branding vids"],
+      ["Chakolas", "PM+SM", "Rohith (cross)", "Anandu KR (cross)", "Bibin", 15, 12, "no shoot - client footage / old clips. SM: +3 branding vids"],
       ["Kulud", "PM", "Rohith (cross)", "Lekshmi", "—", 0, 15, "statics only"],
       ["Ekabrahmaa", "PM+SM", "Aswathy/Fathima", "Lekshmi", "Bibin", 12, 10, "SM: +4 statics +4 branding vids"],
       ["Blusteak", "SM", "Rohith (cross)", "—", "Bibin/Jabin", 5, 0, "AI video — no shoot needed"],
@@ -151,7 +174,7 @@ const pods = {
     flags: [
       "✅ Relsa has 2 full shoot days (Wed+Thu) — strongest shoot capacity of all pods.",
       "⚠️ Rohith is cross-pod — also appears in Reshma. Monitor total load.",
-      "ℹ️ AI videos (Blusteak, Blucampus): Writer→Editor direct, no production shoot needed.",
+      "ℹ️ AI/no-shoot videos (Chakolas, Blusteak, Blucampus): Writer→Editor direct, no production shoot needed.",
     ],
   },
   RESHMA: {
@@ -198,7 +221,7 @@ const legendRows: Array<[string, string | null]> = [
   ["WORKFLOW RULES", null],
   ["Static flow", "Writer writes brief (Day 1) → Designer designs (Day 2)"],
   ["Reel flow", "Writer scripts (Day 1) → Shoot/Production (Day 2) → Editor edits (Day 3)"],
-  ["AI Video flow", "Writer scripts (Day 1) → Editor: AI gen + edit (Day 2–3, runs alongside other edits)"],
+  ["AI / no-shoot video flow", "Writer scripts (Day 1) → Editor edits provided footage / AI (Day 2, Day 3 only if needed)"],
   ["Priority client approval", "Same day — flow continues next day"],
   ["Normal client approval", "1 day buffer built into flow"],
   ["", null],
@@ -335,23 +358,175 @@ function roleColors(role: RoleName) {
   return { bg: C.editor, border: C.editor_b };
 }
 
-function buildRoleRows(podData: PodData, week: WeekBlock, weekIndex: number, client: PodClient) {
+function shootDayKey(podData: PodData, day: WeekDay) {
+  return Object.keys(podData.shoot_days).find((shootDay) => day.label.startsWith(shootDay));
+}
+
+function shootCapacity(podData: PodData, day: WeekDay) {
+  const dayKey = shootDayKey(podData, day);
+  if (!dayKey) return 0;
+  const shootType = podData.shoot_days[dayKey];
+  if (shootType === "full") return 5;
+  if (shootType === "half") return 3;
+  return 0;
+}
+
+function shootDaysForWeek(podData: PodData, week: WeekBlock) {
+  return week.days.filter(
+    (day) =>
+      day.type !== "off" &&
+      Object.keys(podData.shoot_days).some((shootDay) => day.label.includes(shootDay))
+  );
+}
+
+function isDirectEditVideo(note: string) {
+  const normalized = note.toLowerCase();
+  return (
+    /\bai\b/i.test(note) ||
+    normalized.includes("no shoot") ||
+    normalized.includes("existing footage") ||
+    normalized.includes("client footage") ||
+    normalized.includes("old clip")
+  );
+}
+
+function weeklyVideoNeed(client: PodClient, weekIndex: number) {
+  const [, , , , , vids, , note] = client;
+  if (vids <= 0 || isDirectEditVideo(note)) return 0;
+  return split3(vids)[weekIndex] ?? 0;
+}
+
+function emptyProductionAllocation(podData: PodData): ProductionAllocation {
+  const allocation: ProductionAllocation = { allocations: {}, remaining: {} };
+
+  for (const client of podData.clients) {
+    const clientName = client[0];
+    allocation.allocations[clientName] = {};
+    allocation.remaining[clientName] = 0;
+  }
+
+  return allocation;
+}
+
+function hasProductionAllocation(allocation: ProductionAllocation) {
+  return (
+    Object.values(allocation.allocations).some((tasks) => Object.values(tasks).some((count) => count > 0)) ||
+    Object.values(allocation.remaining).some((count) => count > 0)
+  );
+}
+
+function buildMonthProductionAllocations(podData: PodData, weeks: WeekBlock[]): ProductionAllocation[] {
+  const monthAllocations = weeks.map(() => emptyProductionAllocation(podData));
+  const videoClients: ProductionPlanClient[] = podData.clients
+    .filter((client) => weeklyVideoNeed(client, 0) + weeklyVideoNeed(client, 1) + weeklyVideoNeed(client, 2) > 0)
+    .map((client) => ({
+      client,
+      carryover: 0,
+      remaining: client[5],
+      total: client[5],
+    }));
+
+  for (const [weekIndex, week] of weeks.entries()) {
+    const weekAllocation = monthAllocations[weekIndex];
+    const isFinalWeek = weekIndex === weeks.length - 1 || week.isBuffer;
+    const activeClients = videoClients
+      .map((item) => {
+        const plannedThisWeek = isFinalWeek ? item.remaining : Math.min(item.remaining, (split3(item.total)[weekIndex] ?? 0) + item.carryover);
+
+        return { item, plannedThisWeek };
+      })
+      .filter(({ plannedThisWeek }) => plannedThisWeek > 0);
+
+    if (activeClients.length === 0) continue;
+
+    const targetRemaining = Object.fromEntries(
+      activeClients.map(({ item, plannedThisWeek }) => [item.client[0], plannedThisWeek])
+    ) as Record<string, number>;
+    const rotation = weekIndex % activeClients.length;
+    const rotatedClients = activeClients.slice(rotation).concat(activeClients.slice(0, rotation));
+    let cursor = 0;
+
+    for (const day of shootDaysForWeek(podData, week)) {
+      let capacity = shootCapacity(podData, day);
+
+      while (capacity > 0 && rotatedClients.some(({ item }) => (targetRemaining[item.client[0]] ?? 0) > 0)) {
+        let assigned = false;
+
+        for (let offset = 0; offset < rotatedClients.length; offset += 1) {
+          const index = (cursor + offset) % rotatedClients.length;
+          const clientName = rotatedClients[index].item.client[0];
+
+          if ((targetRemaining[clientName] ?? 0) <= 0) continue;
+
+          weekAllocation.allocations[clientName][day.label] = (weekAllocation.allocations[clientName][day.label] ?? 0) + 1;
+          targetRemaining[clientName] -= 1;
+          capacity -= 1;
+          cursor = (index + 1) % rotatedClients.length;
+          assigned = true;
+          break;
+        }
+
+        if (!assigned) break;
+      }
+    }
+
+    for (const { item, plannedThisWeek } of activeClients) {
+      const clientName = item.client[0];
+      const allocatedThisWeek = sumTaskCounts(weekAllocation.allocations[clientName] ?? {});
+      item.remaining = Math.max(item.remaining - allocatedThisWeek, 0);
+      item.carryover = isFinalWeek ? 0 : Math.max(plannedThisWeek - allocatedThisWeek, 0);
+    }
+
+    if (isFinalWeek) {
+      for (const item of videoClients) {
+        weekAllocation.remaining[item.client[0]] = item.remaining;
+      }
+    }
+  }
+
+  return monthAllocations;
+}
+
+function buildProductionAllocation(podData: PodData, weeks: WeekBlock[], weekIndex: number): ProductionAllocation {
+  return buildMonthProductionAllocations(podData, weeks)[weekIndex] ?? emptyProductionAllocation(podData);
+}
+
+function nextEditableDayLabel(week: WeekBlock, shootDayLabel: string) {
+  const shootIndex = week.days.findIndex((day) => day.label === shootDayLabel);
+  const nextDay = week.days.slice(Math.max(0, shootIndex + 1)).find((day) => day.type !== "off");
+  return nextDay?.label ?? week.days[Math.max(0, shootIndex)]?.label ?? shootDayLabel;
+}
+
+function sumTaskCounts(tasks: Record<string, number>) {
+  return Object.values(tasks).reduce((total, count) => total + count, 0);
+}
+
+function buildRoleRows(
+  podData: PodData,
+  week: WeekBlock,
+  weekIndex: number,
+  client: PodClient,
+  productionAllocation: ProductionAllocation
+) {
   const [cname, ctype, writer, designer, editor, vids, statics, note] = client;
-  const isAi = note.includes("AI");
-  const wVids = vids > 0 ? split3(vids)[weekIndex] : 0;
-  const wStatics = statics > 0 ? split3(statics)[weekIndex] : 0;
+  const directEditVideo = isDirectEditVideo(note);
+  const directEditWeekVids = vids > 0 ? split3(vids)[weekIndex] ?? 0 : 0;
+  const wStatics = statics > 0 ? split3(statics)[weekIndex] ?? 0 : 0;
   const dayKeys = week.days.map((day) => day.label);
-  const shootDaysThisWeek = week.days
-    .filter((day) => Object.keys(podData.shoot_days).some((shootDay) => day.label.includes(shootDay)) && day.type !== "off")
-    .map((day) => day.label);
+  const productionTasks = productionAllocation.allocations[cname] ?? {};
+  const scheduledShootCount = directEditVideo ? 0 : sumTaskCounts(productionTasks);
+  const unscheduledShootCount = directEditVideo ? 0 : productionAllocation.remaining[cname] ?? 0;
+  const plannedVideoCount = directEditVideo ? directEditWeekVids : scheduledShootCount;
+  const wVids = plannedVideoCount;
+  const weeklyOut = plannedVideoCount + wStatics;
   const rows: RoleRow[] = [];
 
-  if (!isMissingPerson(writer)) {
+  if (!isMissingPerson(writer) && weeklyOut > 0) {
     const tasks: Record<string, string> = {};
-    if (wVids > 0 && !isAi) tasks[dayKeys[0]] = `Script ${wVids} reel(s)\n[${cname}] incl. hooks`;
-    if (wVids > 0 && isAi) tasks[dayKeys[0]] = `Script ${wVids} AI vid(s)\n[${cname}]`;
+    if (scheduledShootCount > 0 && !directEditVideo) tasks[dayKeys[0]] = `Script ${scheduledShootCount} reel(s)\n[${cname}] incl. hooks`;
+    if (wVids > 0 && directEditVideo) tasks[dayKeys[0]] = `Script ${wVids} video(s)\n[${cname}] for direct edit`;
     if (wStatics > 0) {
-      const staticDay = wVids > 0 ? dayKeys[1] : dayKeys[0];
+      const staticDay = plannedVideoCount > 0 ? dayKeys[1] : dayKeys[0];
       tasks[staticDay] = [tasks[staticDay], `Brief ${wStatics} static(s)\n[${cname}]`].filter(Boolean).join("\n");
     }
     rows.push({
@@ -360,18 +535,26 @@ function buildRoleRows(podData: PodData, week: WeekBlock, weekIndex: number, cli
       role: "Writer",
       person: writer,
       tasks,
-      weeklyOut: wVids + wStatics,
+      weeklyOut,
       note,
       isFirst: true,
       ...roleColors("Writer"),
     });
   }
 
-  if (wVids > 0 && !isAi) {
+  if (!directEditVideo && (scheduledShootCount > 0 || unscheduledShootCount > 0)) {
     const tasks: Record<string, string> = {};
-    for (const shootDay of shootDaysThisWeek.slice(0, 2)) {
-      const cap = week.days.find((day) => day.label === shootDay)?.type === "full" ? "4–5 reels" : "2–3 reels";
-      tasks[shootDay] = `SHOOT ${wVids} reel(s)\n[${cname}]\nCap: ${cap}`;
+    for (const [shootDay, count] of Object.entries(productionTasks)) {
+      const day = week.days.find((item) => item.label === shootDay);
+      const dayCap = day ? shootCapacity(podData, day) : 0;
+      tasks[shootDay] = `SHOOT ${count} reel(s)\n[${cname}]\nDay cap: ${dayCap} reels total`;
+    }
+    if (unscheduledShootCount > 0) {
+      const warningDay = Object.keys(tasks)[0] ?? dayKeys[0];
+      tasks[warningDay] = [
+        tasks[warningDay],
+        `MONTH SHORT: ${unscheduledShootCount} reel(s) need extension till 3rd / extra shoot day`,
+      ].filter(Boolean).join("\n");
     }
     rows.push({
       client: cname,
@@ -379,7 +562,7 @@ function buildRoleRows(podData: PodData, week: WeekBlock, weekIndex: number, cli
       role: "Production",
       person: "Crew",
       tasks,
-      weeklyOut: wVids + wStatics,
+      weeklyOut,
       note,
       isFirst: rows.length === 0,
       ...roleColors("Production"),
@@ -387,30 +570,39 @@ function buildRoleRows(podData: PodData, week: WeekBlock, weekIndex: number, cli
   }
 
   if (!isMissingPerson(designer) && wStatics > 0) {
-    const designDay = wVids > 0 ? dayKeys[2] : dayKeys[1];
+    const designDay = plannedVideoCount > 0 ? dayKeys[2] : dayKeys[1];
     rows.push({
       client: cname,
       service: ctype,
       role: "Designer",
       person: designer,
       tasks: { [designDay]: `Design ${wStatics} static(s)\n[${cname}]\n${designer}` },
-      weeklyOut: wVids + wStatics,
+      weeklyOut,
       note,
       isFirst: rows.length === 0,
       ...roleColors("Designer"),
     });
   }
 
-  if (!isMissingPerson(editor) && wVids > 0) {
+  if (!isMissingPerson(editor) && (directEditVideo ? wVids > 0 : scheduledShootCount > 0)) {
     const tasks: Record<string, string> = {};
-    if (isAi) {
-      tasks[dayKeys[1]] = `AI gen + edit\n${wVids} vid(s)\n[${cname}]`;
-      tasks[dayKeys[2]] = `Finalise AI vids\n[${cname}] — deliver`;
+    if (directEditVideo) {
+      const editDay = dayKeys[1] ?? dayKeys[0];
+      const finaliseDay = dayKeys[2] ?? editDay;
+      const firstDayCount = Math.ceil(wVids / 2);
+      const finaliseCount = wVids - firstDayCount;
+      tasks[editDay] = `Edit provided footage / AI\n${firstDayCount} vid(s)\n[${cname}]`;
+      if (finaliseCount > 0) {
+        const finaliseTask = `Finalise direct edit\n${finaliseCount} vid(s)\n[${cname}] — deliver`;
+        tasks[finaliseDay] = [tasks[finaliseDay], finaliseTask].filter(Boolean).join("\n");
+      }
     } else {
-      for (const shootDay of shootDaysThisWeek.slice(0, 1)) {
-        const shootIndex = dayKeys.indexOf(shootDay);
-        const editDay = dayKeys[Math.min(shootIndex + 1, dayKeys.length - 1)];
-        tasks[editDay] = `Edit ${wVids} video(s)\n[${cname}]\nDeliver EOD`;
+      for (const [shootDay, count] of Object.entries(productionTasks)) {
+        const editDay = nextEditableDayLabel(week, shootDay);
+        tasks[editDay] = [
+          tasks[editDay],
+          `Edit ${count} video(s)\n[${cname}]\nDeliver EOD`,
+        ].filter(Boolean).join("\n");
       }
     }
     rows.push({
@@ -419,7 +611,7 @@ function buildRoleRows(podData: PodData, week: WeekBlock, weekIndex: number, cli
       role: "Editor",
       person: editor,
       tasks,
-      weeklyOut: wVids + wStatics,
+      weeklyOut,
       note,
       isFirst: rows.length === 0,
       ...roleColors("Editor"),
@@ -427,6 +619,32 @@ function buildRoleRows(podData: PodData, week: WeekBlock, weekIndex: number, cli
   }
 
   return rows;
+}
+
+function buildOutputSummaryRows(podData: PodData, weeks: WeekBlock[]): OutputSummaryRow[] {
+  const productionAllocations = buildMonthProductionAllocations(podData, weeks);
+  const finalAllocation = productionAllocations.at(-1);
+
+  return podData.clients.map(([client, service, , , , videos, statics, note]) => {
+    const isDirectEdit = isDirectEditVideo(note);
+    const plannedVideos = isDirectEdit
+      ? weeks.reduce((total, _week, weekIndex) => total + (split3(videos)[weekIndex] ?? 0), 0)
+      : productionAllocations.reduce(
+          (total, allocation) => total + sumTaskCounts(allocation.allocations[client] ?? {}),
+          0
+        );
+    const plannedStatics = weeks.reduce((total, _week, weekIndex) => total + (split3(statics)[weekIndex] ?? 0), 0);
+
+    return {
+      client,
+      service,
+      plannedVideos,
+      plannedStatics,
+      requiredVideos: videos,
+      requiredStatics: statics,
+      remainingVideos: isDirectEdit ? 0 : finalAllocation?.remaining[client] ?? 0,
+    };
+  });
 }
 
 function buildBufferRows(clients: readonly PodClient[]): BufferRow[] {
@@ -621,7 +839,10 @@ function podRowsXmlRows(podName: keyof typeof pods, podData: PodData, weeks: Wee
       }],
     });
 
-    if (week.isBuffer) {
+    const productionAllocation = buildProductionAllocation(podData, weeks, weekIndex);
+    const hasCatchUpProduction = week.isBuffer && hasProductionAllocation(productionAllocation);
+
+    if (week.isBuffer && !hasCatchUpProduction) {
       rows.push({
         cells: ["Client", "Service", "Condition", "Action in W4", "Who", "Est. Output"].map((value) => ({ value, style: "TableHeader" })),
       });
@@ -658,9 +879,9 @@ function podRowsXmlRows(podName: keyof typeof pods, podData: PodData, weeks: Wee
     });
 
     for (const client of podData.clients) {
-      const roleRows = buildRoleRows(podData, week, weekIndex, client);
+      const roleRows = buildRoleRows(podData, week, weekIndex, client, productionAllocation);
       if (roleRows.length === 0) {
-        rows.push({ height: 16, cells: [{ value: `${client[0]} (${client[1]}) — TBD | ${client[7]}`, style: "Off", mergeAcross: 13 }] });
+        rows.push({ height: 16, cells: [{ value: week.isBuffer ? `${client[0]} (${client[1]}) — no catch-up scheduled this week` : `${client[0]} (${client[1]}) — TBD | ${client[7]}`, style: "Off", mergeAcross: 13 }] });
         continue;
       }
 
@@ -684,6 +905,36 @@ function podRowsXmlRows(podName: keyof typeof pods, podData: PodData, weeks: Wee
 
     rows.push({ cells: [] });
     rows.push({ cells: [] });
+  }
+
+  rows.push({ cells: [] });
+  rows.push({
+    height: 22,
+    cells: [{ value: "Monthly output summary by client", style: "Week", mergeAcross: 13 }],
+  });
+  rows.push({
+    cells: ["Client", "Service", "Video outs", "Static outs", "Required videos", "Required statics", "Video short"].map((value) => ({
+      value,
+      style: "TableHeader",
+    })),
+  });
+
+  for (const summary of buildOutputSummaryRows(podData, weeks)) {
+    rows.push({
+      height: 24,
+      cells: [
+        { value: summary.client, style: "DefaultCell" },
+        { value: summary.service, style: "DefaultCell" },
+        { value: `${summary.plannedVideos} / ${summary.requiredVideos}`, style: "WeekTotal" },
+        { value: `${summary.plannedStatics} / ${summary.requiredStatics}`, style: "WeekTotal" },
+        { value: String(summary.requiredVideos), style: "DefaultCell" },
+        { value: String(summary.requiredStatics), style: "DefaultCell" },
+        {
+          value: summary.remainingVideos > 0 ? `${summary.remainingVideos} need extension till 3rd / extra shoot` : "0",
+          style: summary.remainingVideos > 0 ? "MinWarn" : "MinOk",
+        },
+      ],
+    });
   }
 
   return rows;
@@ -753,10 +1004,11 @@ export function getEmployeePlannerItems(
     const podData = pods[podName];
 
     for (const [weekIndex, week] of weeks.entries()) {
-      if (week.isBuffer) continue;
+      const productionAllocation = buildProductionAllocation(podData, weeks, weekIndex);
+      if (week.isBuffer && !hasProductionAllocation(productionAllocation)) continue;
 
       for (const client of podData.clients) {
-        const rows = buildRoleRows(podData, week, weekIndex, client);
+        const rows = buildRoleRows(podData, week, weekIndex, client, productionAllocation);
 
         for (const row of rows) {
           if (row.role !== targetRole) continue;
@@ -920,19 +1172,35 @@ function PodSheet({
       ))}
 
       <div className="mt-6 grid gap-8">
-        {weeks.map((week, index) =>
-          week.isBuffer ? (
+        {weeks.map((week, index) => {
+          const productionAllocation = buildProductionAllocation(podData, weeks, index);
+          const showBufferOnly = week.isBuffer && !hasProductionAllocation(productionAllocation);
+
+          return showBufferOnly ? (
             <BufferWeek key={week.key} podData={podData} week={week} />
           ) : (
-            <WorkingWeek key={week.key} podData={podData} week={week} weekIndex={index} />
-          )
-        )}
+            <WorkingWeek key={week.key} podData={podData} weeks={weeks} week={week} weekIndex={index} />
+          );
+        })}
+        <OutputSummaryTable podData={podData} weeks={weeks} />
       </div>
     </section>
   );
 }
 
-function WorkingWeek({ podData, week, weekIndex }: { podData: PodData; week: WeekBlock; weekIndex: number }) {
+function WorkingWeek({
+  podData,
+  week,
+  weekIndex,
+  weeks,
+}: {
+  podData: PodData;
+  week: WeekBlock;
+  weekIndex: number;
+  weeks: WeekBlock[];
+}) {
+  const productionAllocation = buildProductionAllocation(podData, weeks, weekIndex);
+
   return (
     <section>
       <div className="excel-week-header">📅 {week.name}</div>
@@ -955,11 +1223,13 @@ function WorkingWeek({ podData, week, weekIndex }: { podData: PodData; week: Wee
             </thead>
             <tbody>
               {podData.clients.map((client) => {
-                const rows = buildRoleRows(podData, week, weekIndex, client);
+                const rows = buildRoleRows(podData, week, weekIndex, client, productionAllocation);
                 if (rows.length === 0) {
                   return (
                     <tr key={`${week.key}-${client[0]}-tbd`}>
-                      <td colSpan={week.days.length + 5} className="excel-off-cell">{client[0]} ({client[1]}) — TBD | {client[7]}</td>
+                      <td colSpan={week.days.length + 5} className="excel-off-cell">
+                        {week.isBuffer ? `${client[0]} (${client[1]}) — no catch-up scheduled this week` : `${client[0]} (${client[1]}) — TBD | ${client[7]}`}
+                      </td>
                     </tr>
                   );
                 }
@@ -999,6 +1269,48 @@ function WorkingWeek({ podData, week, weekIndex }: { podData: PodData; week: Wee
                   );
                 });
               })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OutputSummaryTable({ podData, weeks }: { podData: PodData; weeks: WeekBlock[] }) {
+  const rows = buildOutputSummaryRows(podData, weeks);
+
+  return (
+    <section>
+      <div className="excel-week-header">Monthly output summary by client</div>
+      <div className="planner-table-card rounded-xl border border-[var(--border-soft)] bg-white p-0">
+        <div className="planner-table-wrap scroll-area">
+          <table className="planner-excel-table min-w-[860px]">
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Service</th>
+                <th>Video outs</th>
+                <th>Static outs</th>
+                <th>Required videos</th>
+                <th>Required statics</th>
+                <th>Video short</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.client}>
+                  <td className="excel-client-cell">{row.client}</td>
+                  <td>{row.service}</td>
+                  <td className="excel-week-total">{row.plannedVideos} / {row.requiredVideos}</td>
+                  <td className="excel-week-total">{row.plannedStatics} / {row.requiredStatics}</td>
+                  <td>{row.requiredVideos}</td>
+                  <td>{row.requiredStatics}</td>
+                  <td className={row.remainingVideos > 0 ? "excel-min-warn" : "excel-min-ok"}>
+                    {row.remainingVideos > 0 ? `${row.remainingVideos} need extension till 3rd / extra shoot` : "0"}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

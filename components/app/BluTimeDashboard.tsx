@@ -98,8 +98,10 @@ type DashboardProps = {
 };
 
 type DashboardModule = "reports" | "planner" | "tasks" | "team" | "users" | "ai";
+type TeamTaskView = "basecamp" | "planner";
 
 const plannerMonthStorageKey = "blu-time-planner-month";
+const teamPinStorageKey = "blu-time-team-pins";
 
 function currentMonthKey() {
   const now = new Date();
@@ -511,7 +513,11 @@ export function BluTimeDashboard({
         {activeModule === "reports" ? <AdminReportsPanel /> : null}
         {activeModule === "planner" ? <PlannerFoundationPanel /> : null}
         {activeModule === "team" ? (
-          <TeamBasecampTasksPanel members={teamMembers} />
+          <TeamTasksPanel
+            members={teamMembers}
+            monthKey={employeePlannerMonth}
+            onMonthChange={changeEmployeePlannerMonth}
+          />
         ) : null}
         {activeModule === "users"   ? <UserManagementPanel departments={departments} users={users} /> : null}
         {activeModule === "ai"      ? <AiMasterBrainPanel /> : null}
@@ -545,16 +551,26 @@ function PlannerTaskCards({ emptyText, items }: { emptyText: string; items: Empl
   );
 }
 
-function TeamBasecampTasksPanel({ members }: { members: TeamMember[] }) {
+function TeamTasksPanel({
+  members,
+  monthKey,
+  onMonthChange,
+}: {
+  members: TeamMember[];
+  monthKey: string;
+  onMonthChange: (monthKey: string) => void;
+}) {
   const [query, setQuery] = useState("");
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [selectedView, setSelectedView] = useState<TeamTaskView | null>(null);
+  const [pinnedMemberIds, setPinnedMemberIds] = useState<string[]>([]);
   const [tasks, setTasks] = useState<TeamBasecampTask[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [taskMessage, setTaskMessage] = useState("");
   const normalizedQuery = query.trim().toLowerCase();
   const matchedMembers = useMemo(() => {
     const source = members;
-    if (!normalizedQuery) return source.slice(0, 10);
+    if (!normalizedQuery) return [];
 
     return source
       .filter((member) =>
@@ -562,14 +578,30 @@ function TeamBasecampTasksPanel({ members }: { members: TeamMember[] }) {
       )
       .slice(0, 20);
   }, [normalizedQuery, members]);
-  const selectedMember =
-    members.find((member) => member.id === selectedMemberId) ??
-    (matchedMembers.length === 1 ? matchedMembers[0] : null);
+  const pinnedMembers = members.filter((member) => pinnedMemberIds.includes(member.id));
+  const selectedMember = members.find((member) => member.id === selectedMemberId) ?? null;
+  const selectedPlannerTasks =
+    selectedMember && selectedView === "planner"
+      ? getEmployeePlannerItems(monthKey, selectedMember.name, selectedMember.departmentName)
+      : [];
   const taskCounts = {
     overdue: tasks.filter((task) => task.dueStatus === "overdue" || task.overdue).length,
     today: tasks.filter((task) => task.dueStatus === "today").length,
     upcoming: tasks.filter((task) => task.dueStatus === "upcoming").length,
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(teamPinStorageKey) ?? "[]") as string[];
+      if (Array.isArray(parsed)) {
+        setPinnedMemberIds(parsed.filter((id) => members.some((member) => member.id === id)));
+      }
+    } catch {
+      setPinnedMemberIds([]);
+    }
+  }, [members]);
 
   useEffect(() => {
     let cancelled = false;
@@ -593,7 +625,7 @@ function TeamBasecampTasksPanel({ members }: { members: TeamMember[] }) {
       setTaskMessage(payload?.error ?? payload?.warning ?? "");
     }
 
-    if (!selectedMember) {
+    if (!selectedMember || selectedView !== "basecamp") {
       setTasks([]);
       setTaskMessage("");
       setLoadingTasks(false);
@@ -605,10 +637,71 @@ function TeamBasecampTasksPanel({ members }: { members: TeamMember[] }) {
     return () => {
       cancelled = true;
     };
-  }, [selectedMember?.id]);
+  }, [selectedMember?.id, selectedView]);
 
-  function openMember(member: TeamMember) {
+  function openMember(member: TeamMember, view: TeamTaskView) {
     setSelectedMemberId(member.id);
+    setSelectedView(view);
+  }
+
+  function togglePinnedMember(member: TeamMember) {
+    setPinnedMemberIds((current) => {
+      const next = current.includes(member.id)
+        ? current.filter((id) => id !== member.id)
+        : [...current, member.id];
+
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(teamPinStorageKey, JSON.stringify(next));
+      }
+
+      return next;
+    });
+  }
+
+  function memberActionCard(member: TeamMember, source: "pinned" | "search") {
+    const selected = selectedMember?.id === member.id;
+    const pinned = pinnedMemberIds.includes(member.id);
+
+    return (
+      <article
+        key={`${source}-${member.id}`}
+        className={`module-theme-item flex flex-col gap-3 border px-4 py-3 ${selected ? "team-member-selected" : ""}`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block truncate text-base text-[var(--foreground)]">{member.name}</span>
+            <span className="mt-1 block font-mono text-xs uppercase tracking-[0.12em] text-muted">
+              {member.departmentName ?? "Team member"}{member.hasBasecampId ? "" : " / no Basecamp ID"}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => togglePinnedMember(member)}
+            title={pinned ? "Unpin" : "Pin"}
+            className={`rounded-full border px-3 py-2 text-xs ${pinned ? "border-[var(--accent-breeze)] text-[var(--accent-breeze)]" : "border-[var(--border-soft)] text-muted"}`}
+            aria-label={pinned ? `Unpin ${member.name}` : `Pin ${member.name}`}
+          >
+            <i className="ti ti-pin" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => openMember(member, "basecamp")}
+            className="rounded-full border border-[var(--border-soft)] px-3 py-2 text-xs text-muted"
+          >
+            Basecamp tasks
+          </button>
+          <button
+            type="button"
+            onClick={() => openMember(member, "planner")}
+            className="rounded-full border border-[var(--border-soft)] px-3 py-2 text-xs text-muted"
+          >
+            Planner tasks
+          </button>
+        </div>
+      </article>
+    );
   }
 
   return (
@@ -616,14 +709,23 @@ function TeamBasecampTasksPanel({ members }: { members: TeamMember[] }) {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">Team</p>
-          <h2 className="mt-2 text-3xl font-normal">Search Basecamp tasks</h2>
-          <p className="mt-2 text-base text-muted">Open a person to see their assigned Basecamp tasks.</p>
+          <h2 className="mt-2 text-3xl font-normal">Search team tasks</h2>
+          <p className="mt-2 text-base text-muted">Search a person, then open Basecamp tasks or planner tasks.</p>
         </div>
-        <div className="flex flex-wrap gap-2 text-sm">
+        {selectedView === "basecamp" ? (
+          <div className="flex flex-wrap gap-2 text-sm">
           <span className="rounded-full border px-3 py-2 task-status-overdue">{taskCounts.overdue} overdue</span>
           <span className="rounded-full border px-3 py-2 task-status-today">{taskCounts.today} today</span>
           <span className="rounded-full border border-[var(--border-soft)] px-3 py-2 text-muted">{taskCounts.upcoming} upcoming</span>
         </div>
+        ) : selectedView === "planner" ? (
+          <input
+            type="month"
+            value={monthKey}
+            onChange={(event) => onMonthChange(event.target.value)}
+            className="max-w-56 border border-[var(--border)] bg-[var(--surface)] px-4 py-3"
+          />
+        ) : null}
       </div>
 
       <div className="mt-5">
@@ -633,37 +735,32 @@ function TeamBasecampTasksPanel({ members }: { members: TeamMember[] }) {
           onChange={(event) => {
             setQuery(event.target.value);
             setSelectedMemberId(null);
+            setSelectedView(null);
           }}
           placeholder="Search Durga, Bibin, Lekshmi, Anandu..."
           className="w-full border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base"
         />
       </div>
 
-      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-        {matchedMembers.map((member) => {
-          const selected = selectedMember?.id === member.id;
-          return (
-            <button
-              key={member.id}
-              type="button"
-              onClick={() => openMember(member)}
-              className={`module-theme-item flex items-center justify-between gap-3 border px-4 py-3 text-left ${selected ? "team-member-selected" : ""}`}
-            >
-              <span className="min-w-0">
-                <span className="block truncate text-base text-[var(--foreground)]">{member.name}</span>
-                <span className="mt-1 block font-mono text-xs uppercase tracking-[0.12em] text-muted">
-                  {member.departmentName ?? "Team member"}{member.hasBasecampId ? "" : " / no Basecamp ID"}
-                </span>
-              </span>
-              <span className="rounded-full border border-[var(--border-soft)] px-3 py-1 text-xs text-muted">
-                Open
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {pinnedMembers.length > 0 ? (
+        <div className="mt-5">
+          <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">Pinned</p>
+          <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            {pinnedMembers.map((member) => memberActionCard(member, "pinned"))}
+          </div>
+        </div>
+      ) : null}
 
-      {matchedMembers.length === 0 ? (
+      {normalizedQuery ? (
+        <div className="mt-5">
+          <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">Search results</p>
+          <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            {matchedMembers.map((member) => memberActionCard(member, "search"))}
+          </div>
+        </div>
+      ) : null}
+
+      {normalizedQuery && matchedMembers.length === 0 ? (
         <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
           No team member found for this search.
         </div>
@@ -677,59 +774,77 @@ function TeamBasecampTasksPanel({ members }: { members: TeamMember[] }) {
               <h3 className="mt-2 text-2xl font-normal">{selectedMember.name}</h3>
               <p className="mt-1 text-base text-muted">{selectedMember.departmentName ?? "Team member"}</p>
             </div>
-            <span className="rounded-full border border-[var(--border-soft)] px-4 py-2 text-sm text-muted">
-              {tasks.length} Basecamp tasks
-            </span>
+            {selectedView === "basecamp" ? (
+              <span className="rounded-full border border-[var(--border-soft)] px-4 py-2 text-sm text-muted">
+                {tasks.length} Basecamp tasks
+              </span>
+            ) : null}
+            {selectedView === "planner" ? (
+              <span className="rounded-full border border-[var(--border-soft)] px-4 py-2 text-sm text-muted">
+                {selectedPlannerTasks.length} planner tasks
+              </span>
+            ) : null}
           </div>
 
-          {loadingTasks ? <p className="mt-4 text-sm text-muted">Loading Basecamp tasks...</p> : null}
-          {taskMessage ? <p className="mt-4 text-sm text-muted">{taskMessage}</p> : null}
+          {selectedView === "basecamp" ? (
+            <>
+              {loadingTasks ? <p className="mt-4 text-sm text-muted">Loading Basecamp tasks...</p> : null}
+              {taskMessage ? <p className="mt-4 text-sm text-muted">{taskMessage}</p> : null}
 
-          {!loadingTasks && !taskMessage && tasks.length === 0 ? (
-            <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
-              No assigned Basecamp tasks found for this person.
-            </div>
+              {!loadingTasks && !taskMessage && tasks.length === 0 ? (
+                <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
+                  No assigned Basecamp tasks found for this person.
+                </div>
+              ) : null}
+
+              {tasks.length > 0 ? (
+                <div className="mt-5 grid gap-3">
+                  {tasks.map((task) => (
+                    <article
+                      key={`${task.projectId ?? "project"}-${task.id}-${task.parentId ?? "parent"}`}
+                      className={`module-theme-item border border-[var(--border)] p-5 ${teamTaskToneClass(task)}`}
+                    >
+                      <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                            <span>{task.projectName}</span>
+                            <span className={`rounded-full border px-2 py-1 ${teamTaskStatusClass(task)}`}>
+                              {teamTaskStatusLabel(task)}{task.dueOn ? `: ${task.dueOn}` : ""}
+                            </span>
+                            {task.isChild ? <span>Child step</span> : null}
+                          </div>
+                          <h4 className="mt-3 text-2xl font-normal">{task.title}</h4>
+                          {task.parentTitle ? <p className="mt-1 text-sm text-muted">{task.parentTitle}</p> : null}
+                        </div>
+
+                        {task.appUrl ? (
+                          <a
+                            href={task.appUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-block rounded-full border border-[var(--border)] px-4 py-2 text-sm lg:justify-self-end"
+                          >
+                            Open in Basecamp
+                          </a>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+            </>
           ) : null}
 
-          {tasks.length > 0 ? (
-            <div className="mt-5 grid gap-3">
-              {tasks.map((task) => (
-                <article
-                  key={`${task.projectId ?? "project"}-${task.id}-${task.parentId ?? "parent"}`}
-                  className={`module-theme-item border border-[var(--border)] p-5 ${teamTaskToneClass(task)}`}
-                >
-                  <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                        <span>{task.projectName}</span>
-                        <span className={`rounded-full border px-2 py-1 ${teamTaskStatusClass(task)}`}>
-                          {teamTaskStatusLabel(task)}{task.dueOn ? `: ${task.dueOn}` : ""}
-                        </span>
-                        {task.isChild ? <span>Child step</span> : null}
-                      </div>
-                      <h4 className="mt-3 text-2xl font-normal">{task.title}</h4>
-                      {task.parentTitle ? <p className="mt-1 text-sm text-muted">{task.parentTitle}</p> : null}
-                    </div>
-
-                    {task.appUrl ? (
-                      <a
-                        href={task.appUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-block rounded-full border border-[var(--border)] px-4 py-2 text-sm lg:justify-self-end"
-                      >
-                        Open in Basecamp
-                      </a>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-            </div>
+          {selectedView === "planner" ? (
+            <PlannerTaskCards
+              items={selectedPlannerTasks}
+              emptyText="No planner rows found for this person in this month."
+            />
           ) : null}
         </div>
       ) : (
         <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
-          Search and open a team member to view their Basecamp tasks.
+          Search a name, or use a pinned person, then choose Basecamp tasks or Planner tasks.
         </div>
       )}
     </section>

@@ -5,6 +5,7 @@ import { activeTimers, categories, clients, timeEntries } from "@/db/schema";
 import { getCurrentUser } from "@/server/auth/current-user";
 import { getAssignedTasksForPerson } from "@/server/basecamp/client";
 import { db } from "@/server/db/client";
+import { autoPauseOverlongTimers } from "@/server/timers/auto-pause";
 import { elapsedSeconds } from "@/server/timers/time";
 
 export async function GET() {
@@ -13,6 +14,8 @@ export async function GET() {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
+
+  const autoPausedTimerIds = await autoPauseOverlongTimers(user.userId);
 
   const [categoryRows, activeTimerRows, timeEntryRows, basecampTasks] = await Promise.all([
     db
@@ -59,6 +62,7 @@ export async function GET() {
   return NextResponse.json({
     categories: categoryRows,
     basecampTasks,
+    autoPausedTimerIds,
     activeTimers: activeTimerRows.map((timer) => ({
       ...timer,
       elapsedSeconds: elapsedSeconds(timer),

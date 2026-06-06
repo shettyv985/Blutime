@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { activeTimers } from "@/db/schema";
 import { getCurrentUser } from "@/server/auth/current-user";
 import { db } from "@/server/db/client";
+import { autoPauseOverlongTimers } from "@/server/timers/auto-pause";
 import { elapsedSeconds } from "@/server/timers/time";
 
 type RouteParams = {
@@ -19,6 +20,7 @@ export async function PATCH(request: Request, context: RouteParams) {
   }
 
   const body = (await request.json().catch(() => null)) as { action?: string } | null;
+  await autoPauseOverlongTimers(user.userId);
   const [timer] = await db
     .select()
     .from(activeTimers)

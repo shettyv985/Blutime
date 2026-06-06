@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Category = { id: string; name: string };
 type ActiveTimer = {
@@ -10,6 +10,7 @@ type ActiveTimer = {
   taskTitle: string;
   taskSource: string;
   startedAt: string;
+  runningSince: string | null;
   status: string;
   elapsedSeconds: number;
 };
@@ -62,6 +63,9 @@ export function EmployeeTimerPanel({
   const [nowMs, setNowMs] = useState(0);
   const [stateLoadedAtMs, setStateLoadedAtMs] = useState(0);
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
+  const notifiedHoursRef = useRef<Record<string, number>>({});
+  const autoPauseRunKeysRef = useRef(new Set<string>());
   const unplannedTimers = activeTimers.filter((timer) => timer.taskSource !== "basecamp");
 
   async function loadState(options: { silent?: boolean } = {}) {
@@ -71,6 +75,7 @@ export function EmployeeTimerPanel({
       categories?: Category[];
       activeTimers?: ActiveTimer[];
       timeEntries?: TimeEntry[];
+      autoPausedTimerIds?: string[];
       error?: string;
     } | null;
 
@@ -81,6 +86,9 @@ export function EmployeeTimerPanel({
     setTimeEntries(payload?.timeEntries ?? []);
     setCategoryId((current) => current || payload?.categories?.[0]?.id || "");
     setStateLoadedAtMs(Date.now());
+    if (payload?.autoPausedTimerIds?.length) {
+      setMessage(`${payload.autoPausedTimerIds.length} timer${payload.autoPausedTimerIds.length === 1 ? "" : "s"} automatically paused after running for 4 hours.`);
+    }
   }
 
   useEffect(() => {
@@ -119,6 +127,56 @@ export function EmployeeTimerPanel({
     const interval = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    setNotificationPermission("Notification" in window ? Notification.permission : "unsupported");
+  }, []);
+
+  useEffect(() => {
+    if (!nowMs || !stateLoadedAtMs) return;
+
+    for (const timer of activeTimers) {
+      if (timer.status !== "running") continue;
+
+      const elapsed = timer.elapsedSeconds + Math.max(0, Math.floor((nowMs - stateLoadedAtMs) / 1000));
+      const completedHours = Math.floor(elapsed / 3600);
+      const lastNotifiedHour = notifiedHoursRef.current[timer.id] ?? 0;
+
+      if (notificationPermission === "granted" && completedHours >= 1 && completedHours > lastNotifiedHour) {
+        new Notification("BluTime timer reminder", {
+          body: `${timer.taskTitle} has been running for ${completedHours} hour${completedHours === 1 ? "" : "s"}.`,
+          tag: `blutime-${timer.id}-${completedHours}`,
+        });
+        notifiedHoursRef.current[timer.id] = completedHours;
+      }
+
+      if (elapsed < 4 * 60 * 60) continue;
+
+      const runKey = `${timer.id}:${timer.runningSince ?? "running"}`;
+      if (autoPauseRunKeysRef.current.has(runKey)) continue;
+      autoPauseRunKeysRef.current.add(runKey);
+      setMessage(`${timer.taskTitle} automatically paused after reaching 4 hours.`);
+      if (notificationPermission === "granted") {
+        new Notification("BluTime timer automatically paused", {
+          body: `${timer.taskTitle} reached the 4-hour continuous running limit.`,
+          tag: `blutime-auto-pause-${runKey}`,
+        });
+      }
+      void timerAction(timer.id, "pause");
+    }
+  }, [activeTimers, notificationPermission, nowMs, stateLoadedAtMs]);
+
+  async function enableNotifications() {
+    if (!("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      setMessage("Desktop notifications are not supported in this browser.");
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+    setMessage(permission === "granted" ? "Desktop timer notifications enabled." : "Desktop notifications were not enabled.");
+  }
 
   async function startTimer() {
     setMessage("");
@@ -222,6 +280,19 @@ export function EmployeeTimerPanel({
           <p className="mt-2 text-base text-muted">Use this only for work that is not already listed in Basecamp.</p>
         </div>
         <div className="flex flex-wrap gap-2 text-sm">
+          {notificationPermission !== "granted" ? (
+            <button
+              type="button"
+              onClick={() => void enableNotifications()}
+              className="rounded-full border border-[var(--border)] px-3 py-2 text-muted"
+            >
+              Enable notifications
+            </button>
+          ) : (
+            <span className="rounded-full border border-[var(--border)] px-3 py-2 text-muted">
+              Notifications on
+            </span>
+          )}
           <span className="rounded-full border border-[var(--border)] px-3 py-2 text-muted">
             {unplannedTimers.length} active
           </span>

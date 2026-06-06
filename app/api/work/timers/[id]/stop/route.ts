@@ -5,6 +5,7 @@ import { activeTimers, clients, timeEntries } from "@/db/schema";
 import { getCurrentUser } from "@/server/auth/current-user";
 import { db } from "@/server/db/client";
 import { createId } from "@/server/ids";
+import { autoPauseOverlongTimers } from "@/server/timers/auto-pause";
 import { elapsedSeconds } from "@/server/timers/time";
 
 type RouteParams = {
@@ -25,6 +26,8 @@ export async function POST(request: Request, context: RouteParams) {
   if (!outputSummary) {
     return NextResponse.json({ error: "Output / Summary is required." }, { status: 400 });
   }
+
+  await autoPauseOverlongTimers(user.userId);
 
   const [timer] = await db
     .select()

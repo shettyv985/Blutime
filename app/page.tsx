@@ -6,6 +6,7 @@ import { activeTimers, categories, clients, departments, timeEntries, users } fr
 import { getCurrentUser } from "@/server/auth/current-user";
 import { canManagePlanner, canManageUsers, canUseAiMasterBrain, canViewCompanyDashboard } from "@/server/auth/permissions";
 import { db } from "@/server/db/client";
+import { autoPauseOverlongTimers } from "@/server/timers/auto-pause";
 import { todayRangeInIst } from "@/server/timers/day";
 import { elapsedSeconds } from "@/server/timers/time";
 
@@ -23,6 +24,8 @@ export default async function Home() {
   const allowPlanner = canManagePlanner(user);
   const allowAiBrain = canUseAiMasterBrain(user);
   const todayRange = todayRangeInIst();
+
+  await autoPauseOverlongTimers();
 
   const [[departmentTotal], [categoryTotal], departmentRows, userRows, teamRows, activeWorkRows, todayLogRows] = await Promise.all([
     db.select({ value: count() }).from(departments),

@@ -16,6 +16,12 @@ type TimeEntry = {
   totalSeconds: number;
 };
 
+type EditLogDraft = {
+  outputSummary: string;
+  taskTitle: string;
+  totalMinutes: string;
+};
+
 function formatDuration(totalSeconds: number) {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -48,6 +54,9 @@ export function EmployeeLogsPanel() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [savingLogId, setSavingLogId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<EditLogDraft | null>(null);
   const totalSeconds = timeEntries.reduce((sum, entry) => sum + entry.totalSeconds, 0);
 
   async function loadLogs(options: { silent?: boolean } = {}) {
@@ -114,6 +123,58 @@ export function EmployeeLogsPanel() {
     }
 
     setTimeEntries((current) => current.filter((entry) => entry.id !== entryId));
+  }
+
+  function startEditing(entry: TimeEntry) {
+    setMessage("");
+    setEditingLogId(entry.id);
+    setEditDraft({
+      outputSummary: entry.outputSummary,
+      taskTitle: entry.taskTitle,
+      totalMinutes: String(Math.max(1, Math.round(entry.totalSeconds / 60))),
+    });
+  }
+
+  function cancelEditing() {
+    setEditingLogId(null);
+    setEditDraft(null);
+  }
+
+  async function saveLog(entryId: string) {
+    if (!editDraft) return;
+
+    const totalMinutes = Number(editDraft.totalMinutes);
+    if (!editDraft.taskTitle.trim() || !editDraft.outputSummary.trim() || !Number.isFinite(totalMinutes) || totalMinutes <= 0) {
+      setMessage("Task, output summary, and valid minutes are required.");
+      return;
+    }
+
+    setMessage("");
+    setSavingLogId(entryId);
+    const response = await fetch(`/api/work/time-entries/${entryId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        taskTitle: editDraft.taskTitle,
+        outputSummary: editDraft.outputSummary,
+        totalSeconds: Math.round(totalMinutes * 60),
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string;
+      timeEntry?: Pick<TimeEntry, "id" | "outputSummary" | "taskTitle" | "totalSeconds">;
+    } | null;
+    setSavingLogId(null);
+
+    if (!response.ok || !payload?.timeEntry) {
+      setMessage(payload?.error ?? "Could not update log.");
+      return;
+    }
+
+    setTimeEntries((current) =>
+      current.map((entry) => (entry.id === entryId ? { ...entry, ...payload.timeEntry } : entry))
+    );
+    cancelEditing();
   }
 
   function exportLogsPdf() {
@@ -268,6 +329,14 @@ export function EmployeeLogsPanel() {
                 <strong className="font-mono text-xl font-normal">{formatDuration(entry.totalSeconds)}</strong>
                 <button
                   type="button"
+                  onClick={() => startEditing(entry)}
+                  disabled={editingLogId === entry.id}
+                  className="no-print border border-[var(--border)] px-3 py-2 text-xs disabled:opacity-60"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
                   onClick={() => void deleteLog(entry.id)}
                   disabled={deletingLogId === entry.id}
                   className="no-print border border-[var(--danger-border)] px-3 py-2 text-xs text-[var(--danger)] disabled:opacity-60"
@@ -276,9 +345,54 @@ export function EmployeeLogsPanel() {
                 </button>
               </div>
             </div>
-            <p className="mt-3 text-base">
-              <LinkifiedText text={entry.outputSummary} />
-            </p>
+            {editingLogId === entry.id && editDraft ? (
+              <div className="no-print mt-4 grid gap-3">
+                <label className="grid gap-2 text-sm text-muted">
+                  Task
+                  <input
+                    value={editDraft.taskTitle}
+                    onChange={(event) => setEditDraft((current) => current ? { ...current, taskTitle: event.target.value } : current)}
+                    className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base text-[var(--foreground)]"
+                  />
+                </label>
+                <label className="grid gap-2 text-sm text-muted">
+                  Output summary
+                  <textarea
+                    value={editDraft.outputSummary}
+                    onChange={(event) => setEditDraft((current) => current ? { ...current, outputSummary: event.target.value } : current)}
+                    className="min-h-28 border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base text-[var(--foreground)]"
+                  />
+                </label>
+                <label className="grid max-w-48 gap-2 text-sm text-muted">
+                  Logged minutes
+                  <input
+                    type="number"
+                    min="1"
+                    max="1440"
+                    value={editDraft.totalMinutes}
+                    onChange={(event) => setEditDraft((current) => current ? { ...current, totalMinutes: event.target.value } : current)}
+                    className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base text-[var(--foreground)]"
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void saveLog(entry.id)}
+                    disabled={savingLogId === entry.id}
+                    className="border border-[var(--border-strong)] px-5 py-2 text-sm disabled:opacity-60"
+                  >
+                    {savingLogId === entry.id ? "Saving..." : "Save changes"}
+                  </button>
+                  <button type="button" onClick={cancelEditing} className="border border-[var(--border)] px-5 py-2 text-sm">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-3 text-base">
+                <LinkifiedText text={entry.outputSummary} />
+              </p>
+            )}
             {entry.simultaneousNote ? <p className="mt-3 text-sm text-muted">{entry.simultaneousNote}</p> : null}
           </article>
         ))}

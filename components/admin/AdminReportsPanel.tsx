@@ -22,6 +22,7 @@ type ReportPayload = {
   logs: ReportLog[];
   options: { employees: Option[]; clients: Option[]; categories: Option[] };
 };
+type EditLogDraft = { outputSummary: string; taskTitle: string; totalMinutes: string };
 
 function formatDuration(totalSeconds: number) {
   const hours = Math.floor(totalSeconds / 3600);
@@ -66,6 +67,9 @@ export function AdminReportsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deletingLogId, setDeletingLogId] = useState("");
+  const [editingLogId, setEditingLogId] = useState("");
+  const [savingLogId, setSavingLogId] = useState("");
+  const [editDraft, setEditDraft] = useState<EditLogDraft | null>(null);
 
   const query = useMemo(() => {
     const params = new URLSearchParams({ range });
@@ -79,13 +83,13 @@ export function AdminReportsPanel() {
     return params.toString();
   }, [categoryId, clientId, employeeId, end, range, start]);
 
-  const loadReport = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const loadReport = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) setLoading(true);
+    if (!options.silent) setError("");
     const response = await fetch(`/api/admin/reports?${query}`);
     const payload = (await response.json().catch(() => null)) as ReportPayload & { error?: string } | null;
 
-    setLoading(false);
+    if (!options.silent) setLoading(false);
 
     if (!response.ok || !payload) {
       setError(payload?.error ?? "Could not load reports.");
@@ -97,6 +101,14 @@ export function AdminReportsPanel() {
 
   useEffect(() => {
     void loadReport();
+  }, [loadReport]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void loadReport({ silent: true });
+    }, 15000);
+
+    return () => window.clearInterval(interval);
   }, [loadReport]);
 
   const totals = report?.totals;
@@ -118,6 +130,53 @@ export function AdminReportsPanel() {
       return;
     }
 
+    await loadReport();
+  }
+
+  function startEditing(log: ReportLog) {
+    setError("");
+    setEditingLogId(log.id);
+    setEditDraft({
+      outputSummary: log.outputSummary,
+      taskTitle: log.taskTitle,
+      totalMinutes: String(Math.max(1, Math.round(log.totalSeconds / 60))),
+    });
+  }
+
+  function cancelEditing() {
+    setEditingLogId("");
+    setEditDraft(null);
+  }
+
+  async function saveLog(logId: string) {
+    if (!editDraft) return;
+
+    const totalMinutes = Number(editDraft.totalMinutes);
+    if (!editDraft.taskTitle.trim() || !editDraft.outputSummary.trim() || !Number.isFinite(totalMinutes) || totalMinutes <= 0) {
+      setError("Task, output summary, and valid minutes are required.");
+      return;
+    }
+
+    setError("");
+    setSavingLogId(logId);
+    const response = await fetch(`/api/work/time-entries/${logId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        taskTitle: editDraft.taskTitle,
+        outputSummary: editDraft.outputSummary,
+        totalSeconds: Math.round(totalMinutes * 60),
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    setSavingLogId("");
+
+    if (!response.ok) {
+      setError(payload?.error ?? "Could not update log.");
+      return;
+    }
+
+    cancelEditing();
     await loadReport();
   }
 
@@ -270,20 +329,71 @@ export function AdminReportsPanel() {
                     <td>{log.userName}</td>
                     <td>{log.clientName}</td>
                     <td>{log.categoryName}</td>
-                    <td>{log.taskTitle}</td>
                     <td>
-                      <LinkifiedText text={log.outputSummary} />
+                      {editingLogId === log.id && editDraft ? (
+                        <input
+                          value={editDraft.taskTitle}
+                          onChange={(event) => setEditDraft((current) => current ? { ...current, taskTitle: event.target.value } : current)}
+                          className="w-full border border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+                        />
+                      ) : log.taskTitle}
                     </td>
-                    <td className="font-semibold tabular-nums">{formatDuration(log.totalSeconds)}</td>
+                    <td>
+                      {editingLogId === log.id && editDraft ? (
+                        <textarea
+                          value={editDraft.outputSummary}
+                          onChange={(event) => setEditDraft((current) => current ? { ...current, outputSummary: event.target.value } : current)}
+                          className="min-h-24 w-full border border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+                        />
+                      ) : (
+                        <LinkifiedText text={log.outputSummary} />
+                      )}
+                    </td>
+                    <td className="font-semibold tabular-nums">
+                      {editingLogId === log.id && editDraft ? (
+                        <label className="grid gap-1 text-xs text-muted">
+                          Minutes
+                          <input
+                            type="number"
+                            min="1"
+                            max="1440"
+                            value={editDraft.totalMinutes}
+                            onChange={(event) => setEditDraft((current) => current ? { ...current, totalMinutes: event.target.value } : current)}
+                            className="w-28 border border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+                          />
+                        </label>
+                      ) : formatDuration(log.totalSeconds)}
+                    </td>
                     <td className="no-print">
-                      <button
-                        type="button"
-                        onClick={() => void deleteLog(log.id)}
-                        disabled={deletingLogId === log.id}
-                        className="border border-[var(--accent-sunset)] px-4 py-2 text-sm text-[var(--accent-sunset)] disabled:opacity-50"
-                      >
-                        {deletingLogId === log.id ? "Deleting..." : "Delete"}
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        {editingLogId === log.id ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => void saveLog(log.id)}
+                              disabled={savingLogId === log.id}
+                              className="border border-[var(--border-strong)] px-4 py-2 text-sm disabled:opacity-50"
+                            >
+                              {savingLogId === log.id ? "Saving..." : "Save"}
+                            </button>
+                            <button type="button" onClick={cancelEditing} className="border border-[var(--border)] px-4 py-2 text-sm">
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button type="button" onClick={() => startEditing(log)} className="border border-[var(--border)] px-4 py-2 text-sm">
+                            Edit
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void deleteLog(log.id)}
+                          disabled={deletingLogId === log.id}
+                          className="border border-[var(--accent-sunset)] px-4 py-2 text-sm text-[var(--accent-sunset)] disabled:opacity-50"
+                        >
+                          {deletingLogId === log.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

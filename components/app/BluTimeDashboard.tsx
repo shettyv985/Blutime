@@ -68,6 +68,7 @@ type ActiveWork = {
   clientName: string;
   categoryName: string;
   taskTitle: string;
+  startedAt: string;
   status: string;
   elapsedSeconds: number;
 };
@@ -79,6 +80,9 @@ type TodayLog = {
   categoryName: string;
   taskTitle: string;
   outputSummary: string;
+  nokkScore: number | null;
+  startedAt: string;
+  endedAt: string;
   totalSeconds: number;
 };
 
@@ -506,9 +510,9 @@ export function BluTimeDashboard({
         {showPersonalPlannerHighlights ? <BasecampTaskPreview hasBasecampId={hasBasecampId} /> : null}
         {activeModule === "tasks" ? <BasecampTaskPreview hasBasecampId={hasBasecampId} /> : null}
 
-        <EmployeeTimerPanel hasBasecampId={hasBasecampId} showRecentLogs={!isEmployeeOnly} />
+        <EmployeeTimerPanel hasBasecampId={hasBasecampId} showRecentLogs={false} />
 
-        {showPersonalPlannerHighlights ? <EmployeeLogsPanel /> : null}
+        <EmployeeLogsPanel />
 
         {activeModule === "reports" ? <AdminReportsPanel /> : null}
         {activeModule === "planner" ? <PlannerFoundationPanel /> : null}

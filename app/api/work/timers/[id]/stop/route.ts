@@ -12,6 +12,16 @@ type RouteParams = {
   params: Promise<{ id: string }>;
 };
 
+function parseNokkScore(value: unknown) {
+  if (typeof value === "string" && value.trim().toUpperCase() === "NA") return null;
+  if (value === null || value === undefined || value === "") return null;
+
+  const score = Number(value);
+  if (!Number.isInteger(score) || score < 1 || score > 10) return undefined;
+
+  return score;
+}
+
 export async function POST(request: Request, context: RouteParams) {
   const user = await getCurrentUser();
   const { id } = await context.params;
@@ -20,11 +30,16 @@ export async function POST(request: Request, context: RouteParams) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const body = (await request.json().catch(() => null)) as { outputSummary?: string } | null;
+  const body = (await request.json().catch(() => null)) as { nokkScore?: number | string | null; outputSummary?: string } | null;
   const outputSummary = body?.outputSummary?.trim();
+  const nokkScore = parseNokkScore(body?.nokkScore);
 
   if (!outputSummary) {
     return NextResponse.json({ error: "Output / Summary is required." }, { status: 400 });
+  }
+
+  if (nokkScore === undefined) {
+    return NextResponse.json({ error: "NOKK score must be NA or a number from 1 to 10." }, { status: 400 });
   }
 
   await autoPauseOverlongTimers(user.userId);
@@ -80,6 +95,7 @@ export async function POST(request: Request, context: RouteParams) {
     endedAt: now,
     totalSeconds: elapsedSeconds(timer),
     outputSummary,
+    nokkScore,
     simultaneousNote,
     createdAt: now,
     updatedAt: now,

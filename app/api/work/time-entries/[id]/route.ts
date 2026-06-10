@@ -13,9 +13,31 @@ type RouteParams = {
 
 type UpdateTimeEntryBody = {
   outputSummary?: string;
+  endedAt?: string;
+  nokkScore?: number | string | null;
+  startedAt?: string;
   taskTitle?: string;
   totalSeconds?: number;
 };
+
+function parseDateInput(value: unknown) {
+  if (typeof value !== "string") return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date;
+}
+
+function parseNokkScore(value: unknown) {
+  if (typeof value === "string" && value.trim().toUpperCase() === "NA") return null;
+  if (value === null || value === undefined || value === "") return null;
+
+  const score = Number(value);
+  if (!Number.isInteger(score) || score < 1 || score > 10) return undefined;
+
+  return score;
+}
 
 export async function PATCH(request: Request, context: RouteParams) {
   const user = await getCurrentUser();
@@ -28,14 +50,26 @@ export async function PATCH(request: Request, context: RouteParams) {
   const body = (await request.json().catch(() => null)) as UpdateTimeEntryBody | null;
   const taskTitle = body?.taskTitle?.trim();
   const outputSummary = body?.outputSummary?.trim();
-  const totalSeconds = Number(body?.totalSeconds);
+  const startedAtDate = parseDateInput(body?.startedAt);
+  const endedAtDate = parseDateInput(body?.endedAt);
+  const nokkScore = parseNokkScore(body?.nokkScore);
 
   if (!taskTitle || !outputSummary) {
     return NextResponse.json({ error: "Task and output summary are required." }, { status: 400 });
   }
 
+  if (!startedAtDate || !endedAtDate) {
+    return NextResponse.json({ error: "Valid start and end times are required." }, { status: 400 });
+  }
+
+  if (nokkScore === undefined) {
+    return NextResponse.json({ error: "NOKK score must be NA or a number from 1 to 10." }, { status: 400 });
+  }
+
+  const totalSeconds = Math.floor((endedAtDate.getTime() - startedAtDate.getTime()) / 1000);
+
   if (!Number.isInteger(totalSeconds) || totalSeconds < 1 || totalSeconds > 24 * 60 * 60) {
-    return NextResponse.json({ error: "Time must be between 1 second and 24 hours." }, { status: 400 });
+    return NextResponse.json({ error: "End time must be after start time and within 24 hours." }, { status: 400 });
   }
 
   const [entry] = await db
@@ -54,10 +88,15 @@ export async function PATCH(request: Request, context: RouteParams) {
   }
 
   const now = new Date().toISOString();
+  const startedAt = startedAtDate.toISOString();
+  const endedAt = endedAtDate.toISOString();
   const updatedEntry = {
     ...entry,
     taskTitle,
     outputSummary,
+    nokkScore,
+    startedAt,
+    endedAt,
     totalSeconds,
     updatedAt: now,
   };
@@ -68,6 +107,9 @@ export async function PATCH(request: Request, context: RouteParams) {
       .set({
         taskTitle,
         outputSummary,
+        nokkScore,
+        startedAt,
+        endedAt,
         totalSeconds,
         updatedAt: now,
       })
@@ -90,6 +132,9 @@ export async function PATCH(request: Request, context: RouteParams) {
       id,
       taskTitle,
       outputSummary,
+      nokkScore,
+      startedAt,
+      endedAt,
       totalSeconds,
       updatedAt: now,
     },

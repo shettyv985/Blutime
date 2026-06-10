@@ -75,6 +75,7 @@ export default async function Home() {
             clientName: clients.name,
             categoryName: categories.name,
             taskTitle: activeTimers.taskTitle,
+            startedAt: activeTimers.startedAt,
             runningSince: activeTimers.runningSince,
             elapsedBeforePauseSeconds: activeTimers.elapsedBeforePauseSeconds,
             status: activeTimers.status,
@@ -95,7 +96,9 @@ export default async function Home() {
             categoryName: categories.name,
             taskTitle: timeEntries.taskTitle,
             outputSummary: timeEntries.outputSummary,
+            nokkScore: timeEntries.nokkScore,
             totalSeconds: timeEntries.totalSeconds,
+            startedAt: timeEntries.startedAt,
             endedAt: timeEntries.endedAt,
           })
           .from(timeEntries)
@@ -137,6 +140,7 @@ export default async function Home() {
         clientName: timer.clientName,
         categoryName: timer.categoryName,
         taskTitle: timer.taskTitle,
+        startedAt: timer.startedAt,
         status: timer.status,
         elapsedSeconds: elapsedSeconds(timer),
       }))}

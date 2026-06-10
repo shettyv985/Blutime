@@ -46,6 +46,7 @@ export function BasecampTaskPreview({ hasBasecampId }: { hasBasecampId: boolean 
   const [startingTaskId, setStartingTaskId] = useState<string | null>(null);
   const [busyTimerId, setBusyTimerId] = useState<string | null>(null);
   const [outputs, setOutputs] = useState<Record<string, string>>({});
+  const [nokkScores, setNokkScores] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(hasBasecampId);
   const [message, setMessage] = useState("");
   const [timerMessage, setTimerMessage] = useState("");
@@ -165,7 +166,7 @@ export function BasecampTaskPreview({ hasBasecampId }: { hasBasecampId: boolean 
     const response = await fetch(`/api/work/timers/${timerId}/stop`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ outputSummary }),
+      body: JSON.stringify({ outputSummary, nokkScore: nokkScores[timerId] ?? "NA" }),
     });
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;
     setBusyTimerId(null);
@@ -176,6 +177,11 @@ export function BasecampTaskPreview({ hasBasecampId }: { hasBasecampId: boolean 
     }
 
     setOutputs((current) => {
+      const next = { ...current };
+      delete next[timerId];
+      return next;
+    });
+    setNokkScores((current) => {
       const next = { ...current };
       delete next[timerId];
       return next;
@@ -270,7 +276,7 @@ export function BasecampTaskPreview({ hasBasecampId }: { hasBasecampId: boolean 
                     placeholder="Paste output / summary here"
                     className="min-h-24 w-full border border-[var(--border)] bg-[var(--surface)] px-4 py-3"
                   />
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap items-end gap-2">
                     {activeTimer.status === "running" ? (
                       <button
                         type="button"
@@ -290,6 +296,23 @@ export function BasecampTaskPreview({ hasBasecampId }: { hasBasecampId: boolean 
                         Resume
                       </button>
                     )}
+                    <label className="grid gap-1 text-xs text-muted">
+                      Add your NOKK score
+                      <select
+                        value={nokkScores[activeTimer.id] ?? "NA"}
+                        onChange={(event) =>
+                          setNokkScores((current) => ({ ...current, [activeTimer.id]: event.target.value }))
+                        }
+                        className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm text-[var(--foreground)]"
+                      >
+                        <option value="NA">NA</option>
+                        {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
+                          <option key={score} value={String(score)}>
+                            {score}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     <button
                       type="button"
                       onClick={() => stopTimer(activeTimer.id)}

@@ -308,6 +308,7 @@ export const timeEntries = sqliteTable(
     endedAt: text("ended_at").notNull(),
     totalSeconds: integer("total_seconds").notNull(),
     outputSummary: text("output_summary").notNull(),
+    nokkScore: integer("nokk_score"),
     simultaneousNote: text("simultaneous_note"),
     deletedAt: text("deleted_at"),
     deletedByUserId: text("deleted_by_user_id").references(() => users.id),

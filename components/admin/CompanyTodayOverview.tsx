@@ -10,6 +10,7 @@ type ActiveWork = {
   clientName: string;
   categoryName: string;
   taskTitle: string;
+  startedAt: string;
   status: string;
   elapsedSeconds: number;
 };
@@ -21,6 +22,9 @@ type TodayLog = {
   categoryName: string;
   taskTitle: string;
   outputSummary: string;
+  nokkScore: number | null;
+  startedAt: string;
+  endedAt: string;
   totalSeconds: number;
 };
 
@@ -29,6 +33,25 @@ function formatDuration(totalSeconds: number) {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("en-IN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatAverageScore(logs: TodayLog[]) {
+  const scoredLogs = logs.filter((log) => log.nokkScore !== null);
+  if (scoredLogs.length === 0) return "NA";
+
+  const sum = scoredLogs.reduce((total, log) => total + (log.nokkScore ?? 0), 0);
+  return `${(sum / scoredLogs.length).toFixed(1)}/10`;
+}
+
+function formatNokkScore(value: number | null) {
+  return value === null ? "NOKK NA" : `NOKK ${value}/10`;
 }
 
 export function CompanyTodayOverview({
@@ -54,7 +77,7 @@ export function CompanyTodayOverview({
           <p className="mt-2 text-base text-muted">Active work and saved logs for today.</p>
         </div>
         <div className="rounded-full border border-[var(--border)] px-4 py-2 text-base text-muted">
-          {activeWork.length} active / {todayLogs.length} logs
+          {activeWork.length} active / {todayLogs.length} logs / Avg NOKK {formatAverageScore(todayLogs)}
         </div>
       </div>
 
@@ -72,6 +95,7 @@ export function CompanyTodayOverview({
                       {item.clientName} / {item.categoryName}
                     </p>
                     <h4 className="mt-1 text-xl font-normal">{item.taskTitle}</h4>
+                    <p className="mt-2 text-sm text-muted">Started {formatDateTime(item.startedAt)}</p>
                   </div>
                   <div className="text-right">
                     <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">{item.status}</p>
@@ -98,8 +122,16 @@ export function CompanyTodayOverview({
                       {log.clientName} / {log.categoryName}
                     </p>
                     <h4 className="mt-1 text-xl font-normal">{log.taskTitle}</h4>
+                    <p className="mt-2 text-sm text-muted">
+                      {formatDateTime(log.startedAt)} - {formatDateTime(log.endedAt)}
+                    </p>
                   </div>
-                  <strong className="font-mono text-xl font-normal tabular-nums">{formatDuration(log.totalSeconds)}</strong>
+                  <div className="grid justify-items-end gap-2">
+                    <strong className="font-mono text-xl font-normal tabular-nums">{formatDuration(log.totalSeconds)}</strong>
+                    <span className="rounded-full border border-[var(--border)] px-3 py-1 text-xs text-muted">
+                      {formatNokkScore(log.nokkScore)}
+                    </span>
+                  </div>
                 </div>
                 <p className="mt-2 text-base">
                   <LinkifiedText text={log.outputSummary} />

@@ -11,15 +11,18 @@ type TimeEntry = {
   taskTitle: string;
   outputSummary: string;
   simultaneousNote: string | null;
+  nokkScore: number | null;
   startedAt: string;
   endedAt: string;
   totalSeconds: number;
 };
 
 type EditLogDraft = {
+  endedAt: string;
+  nokkScore: string;
   outputSummary: string;
+  startedAt: string;
   taskTitle: string;
-  totalMinutes: string;
 };
 
 function formatDuration(totalSeconds: number) {
@@ -34,6 +37,27 @@ function formatDateTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatNokkScore(value: number | null) {
+  return value === null ? "NOKK NA" : `NOKK ${value}/10`;
+}
+
+function toDateTimeLocal(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function draftDurationSeconds(draft: EditLogDraft) {
+  const startedAt = new Date(draft.startedAt);
+  const endedAt = new Date(draft.endedAt);
+
+  if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) return 0;
+
+  return Math.max(0, Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000));
 }
 
 function todayKey() {
@@ -129,9 +153,11 @@ export function EmployeeLogsPanel() {
     setMessage("");
     setEditingLogId(entry.id);
     setEditDraft({
+      endedAt: toDateTimeLocal(entry.endedAt),
+      nokkScore: entry.nokkScore === null ? "NA" : String(entry.nokkScore),
       outputSummary: entry.outputSummary,
+      startedAt: toDateTimeLocal(entry.startedAt),
       taskTitle: entry.taskTitle,
-      totalMinutes: String(Math.max(1, Math.round(entry.totalSeconds / 60))),
     });
   }
 
@@ -143,9 +169,22 @@ export function EmployeeLogsPanel() {
   async function saveLog(entryId: string) {
     if (!editDraft) return;
 
-    const totalMinutes = Number(editDraft.totalMinutes);
-    if (!editDraft.taskTitle.trim() || !editDraft.outputSummary.trim() || !Number.isFinite(totalMinutes) || totalMinutes <= 0) {
-      setMessage("Task, output summary, and valid minutes are required.");
+    const startedAt = new Date(editDraft.startedAt);
+    const endedAt = new Date(editDraft.endedAt);
+    const totalSeconds = Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000);
+
+    if (
+      !editDraft.taskTitle.trim() ||
+      !editDraft.outputSummary.trim() ||
+      Number.isNaN(startedAt.getTime()) ||
+      Number.isNaN(endedAt.getTime())
+    ) {
+      setMessage("Task, output summary, start time, and end time are required.");
+      return;
+    }
+
+    if (totalSeconds < 1 || totalSeconds > 24 * 60 * 60) {
+      setMessage("End time must be after start time and within 24 hours.");
       return;
     }
 
@@ -157,12 +196,14 @@ export function EmployeeLogsPanel() {
       body: JSON.stringify({
         taskTitle: editDraft.taskTitle,
         outputSummary: editDraft.outputSummary,
-        totalSeconds: Math.round(totalMinutes * 60),
+        nokkScore: editDraft.nokkScore,
+        startedAt: startedAt.toISOString(),
+        endedAt: endedAt.toISOString(),
       }),
     });
     const payload = (await response.json().catch(() => null)) as {
       error?: string;
-      timeEntry?: Pick<TimeEntry, "id" | "outputSummary" | "taskTitle" | "totalSeconds">;
+      timeEntry?: Pick<TimeEntry, "id" | "endedAt" | "nokkScore" | "outputSummary" | "startedAt" | "taskTitle" | "totalSeconds">;
     } | null;
     setSavingLogId(null);
 
@@ -326,6 +367,9 @@ export function EmployeeLogsPanel() {
                 </p>
               </div>
               <div className="flex items-center gap-3">
+                <span className="rounded-full border border-[var(--border)] px-3 py-1 text-xs text-muted">
+                  {formatNokkScore(entry.nokkScore)}
+                </span>
                 <strong className="font-mono text-xl font-normal">{formatDuration(entry.totalSeconds)}</strong>
                 <button
                   type="button"
@@ -363,17 +407,47 @@ export function EmployeeLogsPanel() {
                     className="min-h-28 border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base text-[var(--foreground)]"
                   />
                 </label>
-                <label className="grid max-w-48 gap-2 text-sm text-muted">
-                  Logged minutes
-                  <input
-                    type="number"
-                    min="1"
-                    max="1440"
-                    value={editDraft.totalMinutes}
-                    onChange={(event) => setEditDraft((current) => current ? { ...current, totalMinutes: event.target.value } : current)}
+                <label className="grid max-w-52 gap-2 text-sm text-muted">
+                  NOKK score
+                  <select
+                    value={editDraft.nokkScore}
+                    onChange={(event) => setEditDraft((current) => current ? { ...current, nokkScore: event.target.value } : current)}
                     className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base text-[var(--foreground)]"
-                  />
+                  >
+                    <option value="NA">NA</option>
+                    {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
+                      <option key={score} value={String(score)}>
+                        {score}
+                      </option>
+                    ))}
+                  </select>
                 </label>
+                <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+                  <label className="grid gap-2 text-sm text-muted">
+                    Started
+                    <input
+                      type="datetime-local"
+                      value={editDraft.startedAt}
+                      onChange={(event) => setEditDraft((current) => current ? { ...current, startedAt: event.target.value } : current)}
+                      className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base text-[var(--foreground)]"
+                    />
+                  </label>
+                  <label className="grid gap-2 text-sm text-muted">
+                    Ended
+                    <input
+                      type="datetime-local"
+                      value={editDraft.endedAt}
+                      onChange={(event) => setEditDraft((current) => current ? { ...current, endedAt: event.target.value } : current)}
+                      className="border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base text-[var(--foreground)]"
+                    />
+                  </label>
+                  <div className="border border-[var(--border-soft)] bg-[var(--surface)] px-4 py-3">
+                    <p className="font-mono text-xs uppercase text-muted">Duration</p>
+                    <strong className="font-mono text-base font-normal tabular-nums">
+                      {formatDuration(draftDurationSeconds(editDraft))}
+                    </strong>
+                  </div>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"

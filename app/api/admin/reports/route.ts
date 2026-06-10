@@ -10,6 +10,8 @@ import { todayRangeInIst } from "@/server/timers/day";
 type GroupTotal = {
   id: string;
   name: string;
+  nokkScoreCount: number;
+  nokkScoreSum: number;
   totalSeconds: number;
   logCount: number;
 };
@@ -42,10 +44,14 @@ function rangeFromRequest(searchParams: URLSearchParams) {
   return today;
 }
 
-function addGroup(groups: Map<string, GroupTotal>, id: string, name: string, seconds: number) {
-  const current = groups.get(id) ?? { id, name, totalSeconds: 0, logCount: 0 };
+function addGroup(groups: Map<string, GroupTotal>, id: string, name: string, seconds: number, nokkScore: number | null) {
+  const current = groups.get(id) ?? { id, name, nokkScoreCount: 0, nokkScoreSum: 0, totalSeconds: 0, logCount: 0 };
   current.totalSeconds += seconds;
   current.logCount += 1;
+  if (nokkScore !== null) {
+    current.nokkScoreCount += 1;
+    current.nokkScoreSum += nokkScore;
+  }
   groups.set(id, current);
 }
 
@@ -84,6 +90,7 @@ export async function GET(request: Request) {
         categoryName: categories.name,
         taskTitle: timeEntries.taskTitle,
         outputSummary: timeEntries.outputSummary,
+        nokkScore: timeEntries.nokkScore,
         totalSeconds: timeEntries.totalSeconds,
         startedAt: timeEntries.startedAt,
         endedAt: timeEntries.endedAt,
@@ -112,12 +119,18 @@ export async function GET(request: Request) {
   const byClient = new Map<string, GroupTotal>();
   const byCategory = new Map<string, GroupTotal>();
   let totalSeconds = 0;
+  let nokkScoreCount = 0;
+  let nokkScoreSum = 0;
 
   for (const row of reportRows) {
     totalSeconds += row.totalSeconds;
-    addGroup(byEmployee, row.userId, row.userName, row.totalSeconds);
-    addGroup(byClient, row.clientId, row.clientName, row.totalSeconds);
-    addGroup(byCategory, row.categoryId, row.categoryName, row.totalSeconds);
+    if (row.nokkScore !== null) {
+      nokkScoreCount += 1;
+      nokkScoreSum += row.nokkScore;
+    }
+    addGroup(byEmployee, row.userId, row.userName, row.totalSeconds, row.nokkScore);
+    addGroup(byClient, row.clientId, row.clientName, row.totalSeconds, row.nokkScore);
+    addGroup(byCategory, row.categoryId, row.categoryName, row.totalSeconds, row.nokkScore);
   }
 
   const sortGroups = (items: Map<string, GroupTotal>) =>
@@ -130,6 +143,8 @@ export async function GET(request: Request) {
       logCount: reportRows.length,
       employeeCount: byEmployee.size,
       clientCount: byClient.size,
+      nokkScoreCount,
+      nokkScoreSum,
     },
     groups: {
       byEmployee: sortGroups(byEmployee),

@@ -43,6 +43,7 @@ export async function GET(request: Request) {
       taskTitle: timeEntries.taskTitle,
       outputSummary: timeEntries.outputSummary,
       simultaneousNote: timeEntries.simultaneousNote,
+      nokkScore: timeEntries.nokkScore,
       startedAt: timeEntries.startedAt,
       endedAt: timeEntries.endedAt,
       totalSeconds: timeEntries.totalSeconds,

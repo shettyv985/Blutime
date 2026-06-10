@@ -5,7 +5,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LinkifiedText } from "@/components/LinkifiedText";
 
 type Option = { id: string; name: string };
-type GroupTotal = { id: string; name: string; totalSeconds: number; logCount: number };
+type GroupTotal = {
+  id: string;
+  name: string;
+  nokkScoreCount: number;
+  nokkScoreSum: number;
+  totalSeconds: number;
+  logCount: number;
+};
 type ReportLog = {
   id: string;
   userName: string;
@@ -13,22 +20,63 @@ type ReportLog = {
   categoryName: string;
   taskTitle: string;
   outputSummary: string;
+  nokkScore: number | null;
   totalSeconds: number;
+  startedAt: string;
   endedAt: string;
 };
 type ReportPayload = {
-  totals: { totalSeconds: number; logCount: number; employeeCount: number; clientCount: number };
+  totals: {
+    totalSeconds: number;
+    logCount: number;
+    employeeCount: number;
+    clientCount: number;
+    nokkScoreCount: number;
+    nokkScoreSum: number;
+  };
   groups: { byEmployee: GroupTotal[]; byClient: GroupTotal[]; byCategory: GroupTotal[] };
   logs: ReportLog[];
   options: { employees: Option[]; clients: Option[]; categories: Option[] };
 };
-type EditLogDraft = { outputSummary: string; taskTitle: string; totalMinutes: string };
+type EditLogDraft = { endedAt: string; nokkScore: string; outputSummary: string; startedAt: string; taskTitle: string };
 
 function formatDuration(totalSeconds: number) {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("en-IN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatNokkScore(value: number | null) {
+  return value === null ? "NA" : `${value}/10`;
+}
+
+function formatAverageScore(sum: number, count: number) {
+  return count === 0 ? "NA" : `${(sum / count).toFixed(1)}/10`;
+}
+
+function toDateTimeLocal(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function draftDurationSeconds(draft: EditLogDraft) {
+  const startedAt = new Date(draft.startedAt);
+  const endedAt = new Date(draft.endedAt);
+
+  if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) return 0;
+
+  return Math.max(0, Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000));
 }
 
 function todayKey() {
@@ -45,7 +93,9 @@ function GroupList({ title, items }: { title: string; items: GroupTotal[] }) {
           <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-[var(--surface)] px-4 py-3">
             <div>
               <p className="font-semibold">{item.name}</p>
-              <p className="text-sm text-muted">{item.logCount} logs</p>
+              <p className="text-sm text-muted">
+                {item.logCount} logs / Avg NOKK {formatAverageScore(item.nokkScoreSum, item.nokkScoreCount)}
+              </p>
             </div>
             <strong className="text-lg tabular-nums">{formatDuration(item.totalSeconds)}</strong>
           </div>
@@ -137,9 +187,11 @@ export function AdminReportsPanel() {
     setError("");
     setEditingLogId(log.id);
     setEditDraft({
+      endedAt: toDateTimeLocal(log.endedAt),
+      nokkScore: log.nokkScore === null ? "NA" : String(log.nokkScore),
       outputSummary: log.outputSummary,
+      startedAt: toDateTimeLocal(log.startedAt),
       taskTitle: log.taskTitle,
-      totalMinutes: String(Math.max(1, Math.round(log.totalSeconds / 60))),
     });
   }
 
@@ -151,9 +203,22 @@ export function AdminReportsPanel() {
   async function saveLog(logId: string) {
     if (!editDraft) return;
 
-    const totalMinutes = Number(editDraft.totalMinutes);
-    if (!editDraft.taskTitle.trim() || !editDraft.outputSummary.trim() || !Number.isFinite(totalMinutes) || totalMinutes <= 0) {
-      setError("Task, output summary, and valid minutes are required.");
+    const startedAt = new Date(editDraft.startedAt);
+    const endedAt = new Date(editDraft.endedAt);
+    const totalSeconds = Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000);
+
+    if (
+      !editDraft.taskTitle.trim() ||
+      !editDraft.outputSummary.trim() ||
+      Number.isNaN(startedAt.getTime()) ||
+      Number.isNaN(endedAt.getTime())
+    ) {
+      setError("Task, output summary, start time, and end time are required.");
+      return;
+    }
+
+    if (totalSeconds < 1 || totalSeconds > 24 * 60 * 60) {
+      setError("End time must be after start time and within 24 hours.");
       return;
     }
 
@@ -165,7 +230,9 @@ export function AdminReportsPanel() {
       body: JSON.stringify({
         taskTitle: editDraft.taskTitle,
         outputSummary: editDraft.outputSummary,
-        totalSeconds: Math.round(totalMinutes * 60),
+        nokkScore: editDraft.nokkScore,
+        startedAt: startedAt.toISOString(),
+        endedAt: endedAt.toISOString(),
       }),
     });
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -217,6 +284,7 @@ export function AdminReportsPanel() {
             .stat-card { padding: 12px; }
             .grid { display: grid; gap: 12px; }
             .md\\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+            .md\\:grid-cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
             .xl\\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
             .flex { display: flex; }
             .items-center { align-items: center; }
@@ -297,9 +365,10 @@ export function AdminReportsPanel() {
 
       {totals ? (
         <>
-          <div className="mt-5 grid gap-3 md:grid-cols-4">
+          <div className="mt-5 grid gap-3 md:grid-cols-5">
             <div className="stat-card"><p className="text-sm text-muted p-2">Total time</p><strong className="mt-1 block text-2xl p-2">{formatDuration(totals.totalSeconds)}</strong></div>
             <div className="stat-card"><p className="text-sm text-muted p-2">Logs</p><strong className="mt-1 block text-2xl p-2">{totals.logCount}</strong></div>
+            <div className="stat-card"><p className="text-sm text-muted p-2">Avg NOKK</p><strong className="mt-1 block text-2xl p-2">{formatAverageScore(totals.nokkScoreSum, totals.nokkScoreCount)}</strong></div>
             <div className="stat-card"><p className="text-sm text-muted p-2">Employees</p><strong className="mt-1 block text-2xl p-2">{totals.employeeCount}</strong></div>
             <div className="stat-card"><p className="text-sm text-muted p-2">Clients</p><strong className="mt-1 block text-2xl p-2">{totals.clientCount}</strong></div>
           </div>
@@ -311,7 +380,7 @@ export function AdminReportsPanel() {
           </div>
 
           <div className="mt-5 overflow-x-auto rounded-2xl border border-[var(--border)]">
-            <table className="data-table min-w-[1080px]">
+            <table className="data-table min-w-[1420px]">
               <thead>
                 <tr>
                   <th>Employee</th>
@@ -319,7 +388,10 @@ export function AdminReportsPanel() {
                   <th>Category</th>
                   <th>Task</th>
                   <th>Output</th>
-                  <th>Time</th>
+                  <th>NOKK</th>
+                  <th>Start</th>
+                  <th>End</th>
+                  <th>Duration</th>
                   <th className="no-print">Actions</th>
                 </tr>
               </thead>
@@ -349,20 +421,52 @@ export function AdminReportsPanel() {
                         <LinkifiedText text={log.outputSummary} />
                       )}
                     </td>
-                    <td className="font-semibold tabular-nums">
+                    <td className="tabular-nums">
                       {editingLogId === log.id && editDraft ? (
-                        <label className="grid gap-1 text-xs text-muted">
-                          Minutes
-                          <input
-                            type="number"
-                            min="1"
-                            max="1440"
-                            value={editDraft.totalMinutes}
-                            onChange={(event) => setEditDraft((current) => current ? { ...current, totalMinutes: event.target.value } : current)}
-                            className="w-28 border border-[var(--border)] bg-[var(--surface)] px-3 py-2"
-                          />
-                        </label>
-                      ) : formatDuration(log.totalSeconds)}
+                        <select
+                          value={editDraft.nokkScore}
+                          onChange={(event) => setEditDraft((current) => current ? { ...current, nokkScore: event.target.value } : current)}
+                          className="w-24 border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs"
+                        >
+                          <option value="NA">NA</option>
+                          {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
+                            <option key={score} value={String(score)}>
+                              {score}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-sm text-muted">{formatNokkScore(log.nokkScore)}</span>
+                      )}
+                    </td>
+                    <td className="tabular-nums">
+                      {editingLogId === log.id && editDraft ? (
+                        <input
+                          type="datetime-local"
+                          value={editDraft.startedAt}
+                          onChange={(event) => setEditDraft((current) => current ? { ...current, startedAt: event.target.value } : current)}
+                          className="w-48 border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs"
+                        />
+                      ) : (
+                        <span className="text-sm text-muted">{formatDateTime(log.startedAt)}</span>
+                      )}
+                    </td>
+                    <td className="tabular-nums">
+                      {editingLogId === log.id && editDraft ? (
+                        <input
+                          type="datetime-local"
+                          value={editDraft.endedAt}
+                          onChange={(event) => setEditDraft((current) => current ? { ...current, endedAt: event.target.value } : current)}
+                          className="w-48 border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs"
+                        />
+                      ) : (
+                        <span className="text-sm text-muted">{formatDateTime(log.endedAt)}</span>
+                      )}
+                    </td>
+                    <td className="font-semibold tabular-nums">
+                      {editingLogId === log.id && editDraft
+                        ? formatDuration(draftDurationSeconds(editDraft))
+                        : formatDuration(log.totalSeconds)}
                     </td>
                     <td className="no-print">
                       <div className="flex flex-wrap gap-2">

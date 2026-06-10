@@ -21,6 +21,9 @@ type TimeEntry = {
   taskTitle: string;
   outputSummary: string;
   simultaneousNote: string | null;
+  nokkScore: number | null;
+  startedAt: string;
+  endedAt: string;
   totalSeconds: number;
 };
 
@@ -29,6 +32,17 @@ function formatDuration(totalSeconds: number) {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("en-IN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatNokkScore(value: number | null) {
+  return value === null ? "NOKK NA" : `NOKK ${value}/10`;
 }
 
 function linkify(text: string) {
@@ -58,6 +72,7 @@ export function EmployeeTimerPanel({
   const [unplannedTask, setUnplannedTask] = useState("");
   const [unplannedClient, setUnplannedClient] = useState("");
   const [outputs, setOutputs] = useState<Record<string, string>>({});
+  const [nokkScores, setNokkScores] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [nowMs, setNowMs] = useState(0);
@@ -232,7 +247,7 @@ export function EmployeeTimerPanel({
     const response = await fetch(`/api/work/timers/${timerId}/stop`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ outputSummary }),
+      body: JSON.stringify({ outputSummary, nokkScore: nokkScores[timerId] ?? "NA" }),
     });
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;
 
@@ -242,6 +257,11 @@ export function EmployeeTimerPanel({
     }
 
     setOutputs((current) => {
+      const next = { ...current };
+      delete next[timerId];
+      return next;
+    });
+    setNokkScores((current) => {
       const next = { ...current };
       delete next[timerId];
       return next;
@@ -373,6 +393,7 @@ export function EmployeeTimerPanel({
                   </span>
                 </div>
                 <h4 className="mt-1 text-xl font-normal">{timer.taskTitle}</h4>
+                <p className="mt-2 text-sm text-muted">Started {formatDateTime(timer.startedAt)}</p>
               </div>
               <div className="text-right">
                 <p className="font-mono text-xs uppercase text-muted">elapsed</p>
@@ -392,7 +413,7 @@ export function EmployeeTimerPanel({
               placeholder="Output / Summary"
               className="mt-4 min-h-24 w-full border border-[var(--border)] bg-[var(--surface)] px-4 py-3"
             />
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap items-end gap-2">
               {timer.status === "running" ? (
                 <button onClick={() => timerAction(timer.id, "pause")} className="border border-[var(--border)] px-5 py-2">
                   Pause
@@ -402,6 +423,21 @@ export function EmployeeTimerPanel({
                   Resume
                 </button>
               )}
+              <label className="grid gap-1 text-xs text-muted">
+                Add your NOKK score
+                <select
+                  value={nokkScores[timer.id] ?? "NA"}
+                  onChange={(event) => setNokkScores((current) => ({ ...current, [timer.id]: event.target.value }))}
+                  className="border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--foreground)]"
+                >
+                  <option value="NA">NA</option>
+                  {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
+                    <option key={score} value={String(score)}>
+                      {score}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button onClick={() => stopTimer(timer.id)} className="bg-[var(--primary)] px-5 py-2">
                 Stop and save
               </button>
@@ -424,8 +460,14 @@ export function EmployeeTimerPanel({
                     {entry.clientName} / {entry.categoryName}
                   </p>
                   <h4 className="mt-1 text-xl font-normal">{entry.taskTitle}</h4>
+                  <p className="mt-2 text-sm text-muted">
+                    {formatDateTime(entry.startedAt)} - {formatDateTime(entry.endedAt)}
+                  </p>
                 </div>
                 <div className="flex items-center gap-3">
+                  <span className="rounded-full border border-[var(--border)] px-3 py-1 text-xs text-muted">
+                    {formatNokkScore(entry.nokkScore)}
+                  </span>
                   <strong className="font-mono text-lg font-normal">{formatDuration(entry.totalSeconds)}</strong>
                   <button
                     onClick={() => deleteLog(entry.id)}

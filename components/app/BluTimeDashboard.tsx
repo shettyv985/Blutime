@@ -68,6 +68,7 @@ type ActiveWork = {
   clientName: string;
   categoryName: string;
   taskTitle: string;
+  basecampTaskUrl: string | null;
   startedAt: string;
   status: string;
   elapsedSeconds: number;
@@ -79,6 +80,7 @@ type TodayLog = {
   clientName: string;
   categoryName: string;
   taskTitle: string;
+  basecampTaskUrl: string | null;
   outputSummary: string;
   nokkScore: number | null;
   startedAt: string;

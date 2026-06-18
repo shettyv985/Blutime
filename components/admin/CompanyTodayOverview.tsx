@@ -10,6 +10,7 @@ type ActiveWork = {
   clientName: string;
   categoryName: string;
   taskTitle: string;
+  basecampTaskUrl: string | null;
   startedAt: string;
   status: string;
   elapsedSeconds: number;
@@ -21,6 +22,7 @@ type TodayLog = {
   clientName: string;
   categoryName: string;
   taskTitle: string;
+  basecampTaskUrl: string | null;
   outputSummary: string;
   nokkScore: number | null;
   startedAt: string;
@@ -54,6 +56,21 @@ function formatNokkScore(value: number | null) {
   return value === null ? "NOKK NA" : `NOKK ${value}/10`;
 }
 
+function BasecampTaskButton({ href }: { href: string | null }) {
+  if (!href) return null;
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-3 inline-flex max-w-full items-center justify-center rounded-full border border-[var(--border)] px-4 py-2 text-sm"
+    >
+      Open in Basecamp task
+    </a>
+  );
+}
+
 export function CompanyTodayOverview({
   activeWork,
   todayLogs,
@@ -69,35 +86,36 @@ export function CompanyTodayOverview({
   }, []);
 
   return (
-    <section className="card module-theme-panel mt-5 p-6 sm:p-8">
+    <section className="card module-theme-panel mt-5 p-4 sm:p-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">company today</p>
-          <h2 className="mt-2 text-4xl font-normal">Active work</h2>
+          <h2 className="mt-2 text-3xl font-normal sm:text-4xl">Active work</h2>
           <p className="mt-2 text-base text-muted">Active work and saved logs for today.</p>
         </div>
-        <div className="rounded-full border border-[var(--border)] px-4 py-2 text-base text-muted">
+        <div className="w-full rounded-full border border-[var(--border)] px-4 py-2 text-center text-sm text-muted sm:w-auto sm:text-base">
           {activeWork.length} active / {todayLogs.length} logs / Avg NOKK {formatAverageScore(todayLogs)}
         </div>
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <div>
+      <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="min-w-0">
           <h3 className="text-2xl font-normal">Active timers</h3>
           <div className="mt-3 grid gap-3">
             {activeWork.length === 0 ? <p className="text-base text-muted">No one is tracking right now.</p> : null}
             {activeWork.map((item) => (
-              <article key={item.id} className="module-theme-item border border-[var(--border-soft)] bg-[var(--surface-elevated)] p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
+              <article key={item.id} className="module-theme-item min-w-0 border border-[var(--border-soft)] bg-[var(--surface-elevated)] p-4 sm:p-5">
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
                     <p className="text-base text-[var(--foreground)]">{item.userName}</p>
                     <p className="text-base text-muted">
                       {item.clientName} / {item.categoryName}
                     </p>
-                    <h4 className="mt-1 text-xl font-normal">{item.taskTitle}</h4>
+                    <h4 className="mt-1 break-words text-xl font-normal">{item.taskTitle}</h4>
                     <p className="mt-2 text-sm text-muted">Started {formatDateTime(item.startedAt)}</p>
+                    <BasecampTaskButton href={item.basecampTaskUrl} />
                   </div>
-                  <div className="text-right">
+                  <div className="shrink-0 self-start text-left sm:text-right">
                     <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">{item.status}</p>
                     <strong className="font-mono text-xl font-normal tabular-nums">
                       {formatDuration(item.elapsedSeconds + (item.status === "running" ? tick : 0))}
@@ -109,31 +127,32 @@ export function CompanyTodayOverview({
           </div>
         </div>
 
-        <div>
+        <div className="min-w-0">
           <h3 className="text-2xl font-normal">Today logs</h3>
-          <div className="mt-3 grid max-h-[520px] gap-3 overflow-auto pr-1">
+          <div className="mt-3 grid gap-3 lg:max-h-[520px] lg:overflow-auto lg:pr-1">
             {todayLogs.length === 0 ? <p className="text-base text-muted">No saved logs today.</p> : null}
             {todayLogs.map((log) => (
-              <article key={log.id} className="module-theme-item border border-[var(--border-soft)] bg-[var(--surface-elevated)] p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
+              <article key={log.id} className="module-theme-item min-w-0 border border-[var(--border-soft)] bg-[var(--surface-elevated)] p-4 sm:p-5">
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
                     <p className="text-base text-[var(--foreground)]">{log.userName}</p>
                     <p className="text-base text-muted">
                       {log.clientName} / {log.categoryName}
                     </p>
-                    <h4 className="mt-1 text-xl font-normal">{log.taskTitle}</h4>
+                    <h4 className="mt-1 break-words text-xl font-normal">{log.taskTitle}</h4>
                     <p className="mt-2 text-sm text-muted">
                       {formatDateTime(log.startedAt)} - {formatDateTime(log.endedAt)}
                     </p>
+                    <BasecampTaskButton href={log.basecampTaskUrl} />
                   </div>
-                  <div className="grid justify-items-end gap-2">
+                  <div className="grid shrink-0 self-start justify-items-start gap-2 sm:justify-items-end">
                     <strong className="font-mono text-xl font-normal tabular-nums">{formatDuration(log.totalSeconds)}</strong>
                     <span className="rounded-full border border-[var(--border)] px-3 py-1 text-xs text-muted">
                       {formatNokkScore(log.nokkScore)}
                     </span>
                   </div>
                 </div>
-                <p className="mt-2 text-base">
+                <p className="mt-2 break-words text-base">
                   <LinkifiedText text={log.outputSummary} />
                 </p>
               </article>

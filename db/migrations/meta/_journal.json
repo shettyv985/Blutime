@@ -71,6 +71,13 @@
       "when": 1781058501387,
       "tag": "0009_wild_banshee",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1781887423184,
+      "tag": "0010_short_dragon_lord",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,12 @@ export type ClientServiceType = (typeof clientServiceTypes)[number];
 export const clientTeamRoles = ["writer", "designer", "editor"] as const;
 export type ClientTeamRole = (typeof clientTeamRoles)[number];
 
+export const productionPodNames = ["ROBISH", "RELSA", "RESHMA"] as const;
+export type ProductionPodName = (typeof productionPodNames)[number];
+
+export const productionServiceLabels = ["PM", "SM", "PM+SM"] as const;
+export type ProductionServiceLabel = (typeof productionServiceLabels)[number];
+
 export const plannerServiceLines = ["social", "performance"] as const;
 export type PlannerServiceLine = (typeof plannerServiceLines)[number];
 
@@ -131,6 +137,28 @@ export const monthlyPlans = sqliteTable(
     uniqueIndex("monthly_plans_client_month_unique").on(table.clientId, table.monthKey),
     index("monthly_plans_client_id_idx").on(table.clientId),
     index("monthly_plans_month_key_idx").on(table.monthKey),
+  ]
+);
+
+export const productionWorkbookPlans = sqliteTable(
+  "production_workbook_plans",
+  {
+    id: text("id").primaryKey(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id),
+    monthKey: text("month_key").notNull(),
+    podName: text("pod_name").notNull().$type<ProductionPodName>(),
+    serviceLabel: text("service_label").notNull().$type<ProductionServiceLabel>(),
+    videoCount: integer("video_count").notNull().default(0),
+    staticCount: integer("static_count").notNull().default(0),
+    createdByUserId: text("created_by_user_id").references(() => users.id),
+    ...timestamps(),
+  },
+  (table) => [
+    uniqueIndex("production_workbook_plans_client_month_unique").on(table.clientId, table.monthKey),
+    index("production_workbook_plans_month_idx").on(table.monthKey),
+    index("production_workbook_plans_pod_idx").on(table.podName),
   ]
 );
 
@@ -515,6 +543,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   accountManagedClients: many(clients, { relationName: "clientAccountManager" }),
   clientTeamMemberships: many(clientTeamMembers),
   createdMonthlyPlans: many(monthlyPlans),
+  createdProductionWorkbookPlans: many(productionWorkbookPlans),
   aiSheetSources: many(aiSheetSources),
   aiFileSources: many(aiFileSources),
   aiChatSessions: many(aiChatSessions),
@@ -540,6 +569,7 @@ export const clientsRelations = relations(clients, ({ one, many }) => ({
   leadClientAccess: many(leadClientAccess),
   teamMembers: many(clientTeamMembers),
   monthlyPlans: many(monthlyPlans),
+  productionWorkbookPlans: many(productionWorkbookPlans),
 }));
 
 export const clientTeamMembersRelations = relations(clientTeamMembers, ({ one }) => ({
@@ -563,6 +593,17 @@ export const monthlyPlansRelations = relations(monthlyPlans, ({ one, many }) => 
     references: [users.id],
   }),
   deliverables: many(monthlyPlanDeliverables),
+}));
+
+export const productionWorkbookPlansRelations = relations(productionWorkbookPlans, ({ one }) => ({
+  client: one(clients, {
+    fields: [productionWorkbookPlans.clientId],
+    references: [clients.id],
+  }),
+  createdBy: one(users, {
+    fields: [productionWorkbookPlans.createdByUserId],
+    references: [users.id],
+  }),
 }));
 
 export const monthlyPlanDeliverablesRelations = relations(monthlyPlanDeliverables, ({ one }) => ({
@@ -720,6 +761,8 @@ export type ClientTeamMember = typeof clientTeamMembers.$inferSelect;
 export type NewClientTeamMember = typeof clientTeamMembers.$inferInsert;
 export type MonthlyPlan = typeof monthlyPlans.$inferSelect;
 export type NewMonthlyPlan = typeof monthlyPlans.$inferInsert;
+export type ProductionWorkbookPlan = typeof productionWorkbookPlans.$inferSelect;
+export type NewProductionWorkbookPlan = typeof productionWorkbookPlans.$inferInsert;
 export type MonthlyPlanDeliverable = typeof monthlyPlanDeliverables.$inferSelect;
 export type NewMonthlyPlanDeliverable = typeof monthlyPlanDeliverables.$inferInsert;
 export type Category = typeof categories.$inferSelect;

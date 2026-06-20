@@ -81,11 +81,19 @@ export function BasecampTaskPreview({ hasBasecampId }: { hasBasecampId: boolean 
   }, [hasBasecampId]);
 
   useEffect(() => {
+    function refreshAfterExternalTimerChange() {
+      void loadState({ silent: true });
+    }
+
     const interval = window.setInterval(() => {
       void loadState({ silent: true });
     }, 15000);
 
-    return () => window.clearInterval(interval);
+    window.addEventListener("blu-time:timer-deleted", refreshAfterExternalTimerChange);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("blu-time:timer-deleted", refreshAfterExternalTimerChange);
+    };
   }, [hasBasecampId]);
 
   useEffect(() => {

@@ -7,7 +7,13 @@ import { AiMasterBrainPanel } from "@/components/admin/AiMasterBrainPanel";
 import { AdminReportsPanel } from "@/components/admin/AdminReportsPanel";
 import { CompanyTodayOverview } from "@/components/admin/CompanyTodayOverview";
 import { PlannerFoundationPanel } from "@/components/admin/PlannerFoundationPanel";
-import { getEmployeePlannerItems, type EmployeePlannerItem } from "@/components/admin/PodRoutinePlannerPanel";
+import {
+  buildWorkbookPodsFromSavedPlans,
+  getEmployeePlannerItems,
+  type EmployeePlannerItem,
+  type SavedProductionWorkbookPlan,
+  type WorkbookPods,
+} from "@/components/admin/PodRoutinePlannerPanel";
 import { UserManagementPanel } from "@/components/admin/UserManagementPanel";
 import { EmployeeLanyardBadge } from "@/components/app/EmployeeLanyardBadge";
 import { BasecampTaskPreview } from "@/components/tasks/BasecampTaskPreview";
@@ -191,13 +197,19 @@ export function BluTimeDashboard({
   const [loggingOut, setLoggingOut] = useState(false);
   const [activeModule, setActiveModule] = useState<DashboardModule | null>(null);
   const [employeePlannerMonth, setEmployeePlannerMonth] = useState(currentMonthKey());
+  const [savedWorkbookPods, setSavedWorkbookPods] = useState<WorkbookPods | null>(null);
   const hasBasecampId = Boolean(user.basecampPersonId);
   const isEmployeeOnly =
     !canViewCompanyDashboard && !canManagePlanner && !canManageUsers && !canUseAiBrain;
   const isAccountManager = isAccountManagerDepartment(user.departmentName);
   const showPersonalPlannerHighlights = isEmployeeOnly && !isAccountManager;
   const showModuleNavigation = !isEmployeeOnly || isAccountManager;
-  const employeePlannerItems = getEmployeePlannerItems(employeePlannerMonth, user.name, user.departmentName);
+  const employeePlannerItems = getEmployeePlannerItems(
+    employeePlannerMonth,
+    user.name,
+    user.departmentName,
+    savedWorkbookPods ?? undefined
+  );
 
   const modules: Array<{ id: DashboardModule; label: string }> = [
     ...(canViewCompanyDashboard ? [{ id: "reports" as const, label: "Reports" }] : []),
@@ -217,6 +229,38 @@ export function BluTimeDashboard({
   useEffect(() => {
     setEmployeePlannerMonth(initialPlannerMonthKey());
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSavedWorkbook() {
+      const response = await fetch(
+        `/api/production-workbook?monthKey=${encodeURIComponent(employeePlannerMonth)}`,
+        { cache: "no-store" }
+      );
+      const payload = (await response.json().catch(() => null)) as {
+        plans?: SavedProductionWorkbookPlan[];
+      } | null;
+      if (cancelled) return;
+      setSavedWorkbookPods(
+        response.ok && payload?.plans?.length
+          ? buildWorkbookPodsFromSavedPlans(payload.plans)
+          : null
+      );
+    }
+
+    function handleWorkbookSaved(event: Event) {
+      const savedMonth = (event as CustomEvent<{ monthKey?: string }>).detail?.monthKey;
+      if (!savedMonth || savedMonth === employeePlannerMonth) void loadSavedWorkbook();
+    }
+
+    void loadSavedWorkbook();
+    window.addEventListener("production-workbook-saved", handleWorkbookSaved);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("production-workbook-saved", handleWorkbookSaved);
+    };
+  }, [employeePlannerMonth]);
 
   function changeEmployeePlannerMonth(nextMonthKey: string) {
     if (!isValidMonthKey(nextMonthKey)) return;
@@ -523,6 +567,7 @@ export function BluTimeDashboard({
             members={teamMembers}
             monthKey={employeePlannerMonth}
             onMonthChange={changeEmployeePlannerMonth}
+            workbookPods={savedWorkbookPods ?? undefined}
           />
         ) : null}
         {activeModule === "users"   ? <UserManagementPanel departments={departments} users={users} /> : null}
@@ -561,10 +606,12 @@ function TeamTasksPanel({
   members,
   monthKey,
   onMonthChange,
+  workbookPods,
 }: {
   members: TeamMember[];
   monthKey: string;
   onMonthChange: (monthKey: string) => void;
+  workbookPods?: WorkbookPods;
 }) {
   const [query, setQuery] = useState("");
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
@@ -588,7 +635,7 @@ function TeamTasksPanel({
   const selectedMember = members.find((member) => member.id === selectedMemberId) ?? null;
   const selectedPlannerTasks =
     selectedMember && selectedView === "planner"
-      ? getEmployeePlannerItems(monthKey, selectedMember.name, selectedMember.departmentName)
+      ? getEmployeePlannerItems(monthKey, selectedMember.name, selectedMember.departmentName, workbookPods)
       : [];
   const taskCounts = {
     overdue: tasks.filter((task) => task.dueStatus === "overdue" || task.overdue).length,

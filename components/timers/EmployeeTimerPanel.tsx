@@ -135,7 +135,11 @@ export function EmployeeTimerPanel({
     }
 
     window.addEventListener("blu-time:timer-started", refreshAfterExternalStart);
-    return () => window.removeEventListener("blu-time:timer-started", refreshAfterExternalStart);
+    window.addEventListener("blu-time:timer-deleted", refreshAfterExternalStart);
+    return () => {
+      window.removeEventListener("blu-time:timer-started", refreshAfterExternalStart);
+      window.removeEventListener("blu-time:timer-deleted", refreshAfterExternalStart);
+    };
   }, []);
 
   useEffect(() => {

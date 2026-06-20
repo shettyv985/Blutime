@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { activeTimers } from "@/db/schema";
 import { getCurrentUser } from "@/server/auth/current-user";
+import { canViewCompanyDashboard } from "@/server/auth/permissions";
 import { db } from "@/server/db/client";
 import { autoPauseOverlongTimers } from "@/server/timers/auto-pause";
 import { elapsedSeconds } from "@/server/timers/time";
@@ -56,4 +57,31 @@ export async function PATCH(request: Request, context: RouteParams) {
   }
 
   return NextResponse.json({ error: "Invalid timer action." }, { status: 400 });
+}
+
+export async function DELETE(_request: Request, context: RouteParams) {
+  const user = await getCurrentUser();
+  const { id } = await context.params;
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  if (!canViewCompanyDashboard(user)) {
+    return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+  }
+
+  const [timer] = await db
+    .select({ id: activeTimers.id })
+    .from(activeTimers)
+    .where(eq(activeTimers.id, id))
+    .limit(1);
+
+  if (!timer) {
+    return NextResponse.json({ error: "Active timer not found." }, { status: 404 });
+  }
+
+  await db.delete(activeTimers).where(eq(activeTimers.id, id));
+
+  return NextResponse.json({ ok: true, timerId: id });
 }

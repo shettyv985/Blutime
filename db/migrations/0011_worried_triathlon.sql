@@ -1,0 +1,1 @@
+ALTER TABLE `time_entries` ADD `work_slots_json` text;

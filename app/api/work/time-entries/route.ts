@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { categories, clients, timeEntries } from "@/db/schema";
 import { getCurrentUser } from "@/server/auth/current-user";
 import { db } from "@/server/db/client";
+import { parseStoredWorkSlots } from "@/server/timers/work-slots";
 
 const dayMs = 24 * 60 * 60 * 1000;
 
@@ -47,6 +48,7 @@ export async function GET(request: Request) {
       startedAt: timeEntries.startedAt,
       endedAt: timeEntries.endedAt,
       totalSeconds: timeEntries.totalSeconds,
+      workSlotsJson: timeEntries.workSlotsJson,
     })
     .from(timeEntries)
     .innerJoin(clients, eq(timeEntries.clientId, clients.id))
@@ -55,5 +57,13 @@ export async function GET(request: Request) {
     .orderBy(desc(timeEntries.startedAt))
     .limit(200);
 
-  return NextResponse.json({ timeEntries: rows });
+  return NextResponse.json({
+    timeEntries: rows.map(({ workSlotsJson, ...row }) => ({
+      ...row,
+      workSlots: parseStoredWorkSlots(workSlotsJson, {
+        startedAt: row.startedAt,
+        endedAt: row.endedAt,
+      }),
+    })),
+  });
 }

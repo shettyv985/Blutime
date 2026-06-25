@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/server/auth/current-user";
 import { canViewCompanyDashboard } from "@/server/auth/permissions";
 import { db } from "@/server/db/client";
 import { createId } from "@/server/ids";
+import { normalizeWorkSlots, serializeWorkSlots } from "@/server/timers/work-slots";
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -18,16 +19,8 @@ type UpdateTimeEntryBody = {
   startedAt?: string;
   taskTitle?: string;
   totalSeconds?: number;
+  workSlots?: unknown;
 };
-
-function parseDateInput(value: unknown) {
-  if (typeof value !== "string") return null;
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-
-  return date;
-}
 
 function parseNokkScore(value: unknown) {
   if (typeof value === "string" && value.trim().toUpperCase() === "NA") return null;
@@ -50,26 +43,21 @@ export async function PATCH(request: Request, context: RouteParams) {
   const body = (await request.json().catch(() => null)) as UpdateTimeEntryBody | null;
   const taskTitle = body?.taskTitle?.trim();
   const outputSummary = body?.outputSummary?.trim();
-  const startedAtDate = parseDateInput(body?.startedAt);
-  const endedAtDate = parseDateInput(body?.endedAt);
   const nokkScore = parseNokkScore(body?.nokkScore);
+  const normalizedSlots = normalizeWorkSlots(
+    Array.isArray(body?.workSlots) ? body.workSlots : [{ startedAt: body?.startedAt, endedAt: body?.endedAt }]
+  );
 
   if (!taskTitle || !outputSummary) {
     return NextResponse.json({ error: "Task and output summary are required." }, { status: 400 });
   }
 
-  if (!startedAtDate || !endedAtDate) {
-    return NextResponse.json({ error: "Valid start and end times are required." }, { status: 400 });
+  if ("error" in normalizedSlots) {
+    return NextResponse.json({ error: normalizedSlots.error }, { status: 400 });
   }
 
   if (nokkScore === undefined) {
     return NextResponse.json({ error: "NOKK score must be NA or a number from 1 to 10." }, { status: 400 });
-  }
-
-  const totalSeconds = Math.floor((endedAtDate.getTime() - startedAtDate.getTime()) / 1000);
-
-  if (!Number.isInteger(totalSeconds) || totalSeconds < 1 || totalSeconds > 24 * 60 * 60) {
-    return NextResponse.json({ error: "End time must be after start time and within 24 hours." }, { status: 400 });
   }
 
   const [entry] = await db
@@ -88,8 +76,8 @@ export async function PATCH(request: Request, context: RouteParams) {
   }
 
   const now = new Date().toISOString();
-  const startedAt = startedAtDate.toISOString();
-  const endedAt = endedAtDate.toISOString();
+  const { endedAt, startedAt, totalSeconds, workSlots } = normalizedSlots;
+  const workSlotsJson = serializeWorkSlots(workSlots);
   const updatedEntry = {
     ...entry,
     taskTitle,
@@ -98,6 +86,7 @@ export async function PATCH(request: Request, context: RouteParams) {
     startedAt,
     endedAt,
     totalSeconds,
+    workSlotsJson,
     updatedAt: now,
   };
 
@@ -111,6 +100,7 @@ export async function PATCH(request: Request, context: RouteParams) {
         startedAt,
         endedAt,
         totalSeconds,
+        workSlotsJson,
         updatedAt: now,
       })
       .where(eq(timeEntries.id, id));
@@ -136,6 +126,7 @@ export async function PATCH(request: Request, context: RouteParams) {
       startedAt,
       endedAt,
       totalSeconds,
+      workSlots,
       updatedAt: now,
     },
   });

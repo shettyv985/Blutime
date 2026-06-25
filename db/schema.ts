@@ -335,6 +335,7 @@ export const timeEntries = sqliteTable(
     startedAt: text("started_at").notNull(),
     endedAt: text("ended_at").notNull(),
     totalSeconds: integer("total_seconds").notNull(),
+    workSlotsJson: text("work_slots_json"),
     outputSummary: text("output_summary").notNull(),
     nokkScore: integer("nokk_score"),
     simultaneousNote: text("simultaneous_note"),

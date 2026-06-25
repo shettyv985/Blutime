@@ -7,6 +7,7 @@ import { db } from "@/server/db/client";
 import { createId } from "@/server/ids";
 import { autoPauseOverlongTimers } from "@/server/timers/auto-pause";
 import { elapsedSeconds } from "@/server/timers/time";
+import { serializeWorkSlots } from "@/server/timers/work-slots";
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -94,6 +95,7 @@ export async function POST(request: Request, context: RouteParams) {
     startedAt: timer.startedAt,
     endedAt: now,
     totalSeconds: elapsedSeconds(timer),
+    workSlotsJson: serializeWorkSlots([{ startedAt: timer.startedAt, endedAt: now }]),
     outputSummary,
     nokkScore,
     simultaneousNote,

@@ -49,9 +49,12 @@ It is a full-stack Next.js application backed by Turso/libSQL and Drizzle ORM. E
 ### Music
 
 - Gives employees a compact YouTube player on their home screen, in the space the old planner used.
-- Plays a team default video, playlist, or live stream set by `NEXT_PUBLIC_YOUTUBE_DEFAULT_URL`.
-- Lets each person paste their own YouTube link; it is saved in that browser only.
+- Searches YouTube from inside the panel; clicking a result plays it in place and queues the rest of the results.
+- Accepts a pasted YouTube link in the same search box.
+- Plays a team default video, playlist, or live stream set by `NEXT_PUBLIC_YOUTUBE_DEFAULT_URL` until someone picks something; the last choice is remembered in that browser.
 - Uses the privacy-enhanced `youtube-nocookie.com` embed. No login is needed, but YouTube may show ads, and some label-owned videos cannot be embedded.
+
+YouTube's own website cannot be shown inside another site (it sends `X-Frame-Options: SAMEORIGIN`), so search goes through the YouTube Data API on the server. Each search costs 100 of the default 10,000 daily quota units, about 100 searches a day across the company. Repeated searches are cached in server memory for six hours. Request a quota increase in Google Cloud if the team needs more.
 
 The production planner has been removed from the app. Its database tables (`production_workbook_plans`, `monthly_plans`, `monthly_plan_deliverables`, `planner_assignments`) are still in the schema so existing data is kept.
 
@@ -261,6 +264,7 @@ For private sheets, share the spreadsheet with the configured service-account em
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
+| `YOUTUBE_API_KEY` | For music search | Google API key with **YouTube Data API v3** enabled; server-only. Falls back to `GOOGLE_SHEETS_API_KEY` when unset, which works only if that key's project also has the YouTube Data API enabled |
 | `NEXT_PUBLIC_YOUTUBE_DEFAULT_URL` | No | YouTube video, playlist, or live-stream link that plays by default in the employee music panel; falls back to Lofi Girl's "Study Sessions" playlist. Set before building, because it is baked into the client bundle |
 
 ### Legacy Supabase variables
@@ -353,6 +357,7 @@ Uploaded AI files are stored inside the database as base64. This is convenient f
 | `/api/work/time-entries` | `GET` | Read the current user's log history |
 | `/api/work/time-entries/:id` | `PATCH`, `DELETE` | Edit or soft-delete a log |
 | `/api/basecamp/tasks` | `GET` | Read personal or authorized team Basecamp tasks |
+| `/api/music/search` | `GET` | Search YouTube for the music panel (`?q=`) |
 
 ### Administration
 

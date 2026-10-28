@@ -84,6 +84,10 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
   const [categoryName, setCategoryName] = useState("");
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [categoryDraft, setCategoryDraft] = useState<{ name: string; isActive: boolean } | null>(null);
+  const [showRemoved, setShowRemoved] = useState(false);
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const removedCount = users.filter((user) => !user.isActive).length;
+  const visibleUsers = showRemoved ? users : users.filter((user) => user.isActive);
 
   async function loadCategories() {
     const response = await fetch("/api/admin/categories", { cache: "no-store" });
@@ -240,6 +244,64 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
     setEditingId(null);
     setEditDraft(null);
     setMessage("User updated.");
+    router.refresh();
+  }
+
+  async function deleteUser(user: ManagedUser) {
+    const confirmed = window.confirm(
+      `Delete ${user.name}?\n\nThey will be signed out and can no longer use BluTime, and any timers they left running are discarded. Their past work logs stay in reports. You can restore them later from "Show removed people".`
+    );
+    if (!confirmed) return;
+
+    setBusyUserId(user.id);
+    setMessage("");
+
+    const response = await fetch("/api/admin/users", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: user.id }),
+    });
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+    setBusyUserId(null);
+
+    if (!response.ok) {
+      setMessage(payload?.error ?? "Could not delete user.");
+      return;
+    }
+
+    setMessage(`${user.name} was deleted.`);
+    router.refresh();
+  }
+
+  async function restoreUser(user: ManagedUser) {
+    setBusyUserId(user.id);
+    setMessage("");
+
+    const response = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        accessRole: user.accessRole,
+        departmentId: user.departmentId ?? "",
+        basecampPersonId: user.basecampPersonId ?? "",
+        photoUrl: user.photoUrl ?? "",
+        isActive: true,
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+    setBusyUserId(null);
+
+    if (!response.ok) {
+      setMessage(payload?.error ?? "Could not restore user.");
+      return;
+    }
+
+    setMessage(`${user.name} was restored.`);
     router.refresh();
   }
 
@@ -417,7 +479,23 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
         </div>
       </section>
 
-      <div className="mt-5 overflow-x-auto">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted">
+          {users.length - removedCount} active {users.length - removedCount === 1 ? "person" : "people"}
+          {removedCount > 0 ? ` · ${removedCount} removed` : ""}
+        </p>
+        {removedCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => setShowRemoved((current) => !current)}
+            className="border border-[var(--border)] px-3 py-1 text-xs"
+          >
+            {showRemoved ? "Hide removed people" : `Show removed people (${removedCount})`}
+          </button>
+        ) : null}
+      </div>
+
+      <div className="mt-3 overflow-x-auto">
         <table className="data-table min-w-[920px]">
           <thead>
             <tr>
@@ -431,8 +509,8 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
             </tr>
           </thead>
           <tbody>
-            {users.map((user) => (
-              <tr key={user.id} className="align-top">
+            {visibleUsers.map((user) => (
+              <tr key={user.id} className={`align-top ${user.isActive ? "" : "opacity-60"}`}>
                 {editingId === user.id && editDraft ? (
                   <>
                     <td className="py-3 pr-4">
@@ -509,7 +587,7 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
                         className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1"
                       >
                         <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
+                        <option value="inactive">Removed</option>
                       </select>
                       <div className="mt-2 flex gap-2">
                         <button
@@ -551,14 +629,37 @@ export function UserManagementPanel({ departments, users }: UserManagementPanelP
                     <td className="py-3 pr-4">{user.departmentName ?? "-"}</td>
                     <td className="py-3 pr-4">{user.basecampPersonId ?? "-"}</td>
                     <td className="py-3">
-                      <div>{user.isActive ? "Active" : "Inactive"}</div>
-                      <button
-                        type="button"
-                        onClick={() => startEdit(user)}
-                        className="mt-2 rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-semibold"
-                      >
-                        Edit
-                      </button>
+                      <div>{user.isActive ? "Active" : "Removed"}</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {user.isActive ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => startEdit(user)}
+                              className="rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-semibold"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void deleteUser(user)}
+                              disabled={busyUserId === user.id}
+                              className="rounded-lg border border-[var(--danger-border)] px-3 py-1 text-xs font-semibold text-[var(--danger)] disabled:opacity-60"
+                            >
+                              {busyUserId === user.id ? "Deleting..." : "Delete"}
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void restoreUser(user)}
+                            disabled={busyUserId === user.id}
+                            className="rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-semibold disabled:opacity-60"
+                          >
+                            {busyUserId === user.id ? "Restoring..." : "Restore"}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </>
                 )}

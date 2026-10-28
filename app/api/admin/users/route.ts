@@ -1,7 +1,7 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-import { departments, users, type AccessRole } from "@/db/schema";
+import { activeTimers, departments, sessions, users, type AccessRole } from "@/db/schema";
 import { getCurrentUser } from "@/server/auth/current-user";
 import { hashPassword } from "@/server/auth/password";
 import { canManageUsers } from "@/server/auth/permissions";
@@ -191,6 +191,55 @@ export async function PATCH(request: Request) {
       updatedAt: new Date().toISOString(),
     })
     .where(eq(users.id, id));
+
+  return NextResponse.json({ ok: true });
+}
+
+// Removes a person who has left: they can no longer sign in, their open sessions and unsaved timers are
+// cleared, and they drop out of team lists. The user row stays so their saved work logs keep their name
+// in reports; setting them active again restores the account.
+export async function DELETE(request: Request) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser || !canManageUsers(currentUser)) {
+    return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+  }
+
+  const body = (await request.json().catch(() => null)) as { id?: string } | null;
+  const id = body?.id?.trim();
+
+  if (!id) {
+    return NextResponse.json({ error: "User ID is required." }, { status: 400 });
+  }
+
+  if (id === currentUser.userId) {
+    return NextResponse.json({ error: "You can't delete your own account." }, { status: 400 });
+  }
+
+  const [targetUser] = await db
+    .select({ id: users.id, accessRole: users.accessRole })
+    .from(users)
+    .where(eq(users.id, id))
+    .limit(1);
+
+  if (!targetUser) {
+    return NextResponse.json({ error: "User not found." }, { status: 404 });
+  }
+
+  if (targetUser.accessRole === "boss" && currentUser.accessRole !== "boss") {
+    return NextResponse.json({ error: "Only a boss can delete a boss account." }, { status: 403 });
+  }
+
+  const now = new Date().toISOString();
+
+  await db.transaction(async (tx) => {
+    await tx.update(users).set({ isActive: false, updatedAt: now }).where(eq(users.id, id));
+    await tx
+      .update(sessions)
+      .set({ revokedAt: now })
+      .where(and(eq(sessions.userId, id), isNull(sessions.revokedAt)));
+    await tx.delete(activeTimers).where(eq(activeTimers.userId, id));
+  });
 
   return NextResponse.json({ ok: true });
 }

@@ -78,6 +78,7 @@ AI access is restricted to bosses and users with the `hr_ops` role whose departm
 - Creates and updates employee logins.
 - Assigns access roles and departments.
 - Activates or deactivates users.
+- Deletes people who have left: they are signed out, cannot sign in, lose any unsaved running timers, and drop out of team lists, while their saved work logs stay in reports. Removed people can be shown and restored from the user table.
 - Maps users to Basecamp person IDs.
 - Stores optional profile-photo URLs, including Google Drive links.
 - Creates, renames, activates, and hides timer categories.
@@ -364,7 +365,7 @@ Uploaded AI files are stored inside the database as base64. This is convenient f
 
 | Endpoint | Methods | Purpose |
 | --- | --- | --- |
-| `/api/admin/users` | `GET`, `POST`, `PATCH` | Manage company users |
+| `/api/admin/users` | `GET`, `POST`, `PATCH`, `DELETE` | Manage company users; `DELETE` removes a person who has left and keeps their work logs |
 | `/api/admin/categories` | `GET`, `POST`, `PATCH` | Manage timer categories |
 | `/api/admin/reports` | `GET` | Filtered company reports and grouped totals |
 

@@ -48,10 +48,15 @@ It is a full-stack Next.js application backed by Turso/libSQL and Drizzle ORM. E
 
 ### Music
 
-- Gives employees a music launcher on their home screen, in the space the old planner used.
-- Opens the real YouTube or YouTube Music in its own window docked to the right edge of the screen, so people get the full interface: search, recommendations, and their own signed-in playlists.
+- Gives employees a YouTube-style music player on their home screen, in the space the old planner used.
+- Home shows trending music in India as a video grid, with category chips (Malayalam, Bollywood, Tamil, Lofi, and more) and a search bar.
+- Clicking a video opens a watch view with the player and an "Up next" list that plays automatically.
+- Going back to Home keeps the music playing in a mini player in the corner.
+- A pasted YouTube link in the search box plays that video directly.
 
-YouTube cannot be shown inside BluTime: it sends `X-Frame-Options: SAMEORIGIN`, which stops other sites from framing it. It also sends `Cross-Origin-Opener-Policy: same-origin-allow-popups`, which isolates the window BluTime opens, so BluTime cannot track or refocus that window afterwards. The feature needs no API key or server code.
+YouTube's own website cannot be shown inside another site (it sends `X-Frame-Options: SAMEORIGIN`), so the panel recreates its browse and watch flow with the YouTube Data API on the server and plays videos through the official YouTube IFrame Player API (`youtube-nocookie.com`). People are not signed in to YouTube there, so personal playlists and history are not available.
+
+Quota: the trending home feed costs 1 unit per refresh, but each new search or category costs 100 of the default 10,000 daily units, about 100 new searches a day across the company. Results are kept in Next's shared data cache (12 hours for searches, 1 hour for trending), so repeated searches are free. Request a quota increase in Google Cloud if the team needs more.
 
 The production planner has been removed from the app. Its database tables (`production_workbook_plans`, `monthly_plans`, `monthly_plan_deliverables`, `planner_assignments`) are still in the schema so existing data is kept.
 
@@ -257,6 +262,12 @@ If no provider is explicitly requested, BluTime prefers Manus when `MANUS_API_KE
 
 For private sheets, share the spreadsheet with the configured service-account email.
 
+### Music
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `YOUTUBE_API_KEY` | For the music panel | Google API key with **YouTube Data API v3** enabled; server-only. Falls back to `GOOGLE_SHEETS_API_KEY` when unset, which works only if that key's project also has the YouTube Data API enabled |
+
 ### Legacy Supabase variables
 
 `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are referenced only by the retained `lib/supabase.ts` prototype helper. The current application data path uses Turso and does not require these variables.
@@ -347,6 +358,7 @@ Uploaded AI files are stored inside the database as base64. This is convenient f
 | `/api/work/time-entries` | `GET` | Read the current user's log history |
 | `/api/work/time-entries/:id` | `PATCH`, `DELETE` | Edit or soft-delete a log |
 | `/api/basecamp/tasks` | `GET` | Read personal or authorized team Basecamp tasks |
+| `/api/music/videos` | `GET` | Trending music, or YouTube search results with `?q=`, for the music panel |
 
 ### Administration
 

@@ -6,16 +6,9 @@ import { useEffect, useMemo, useState } from "react";
 import { AiMasterBrainPanel } from "@/components/admin/AiMasterBrainPanel";
 import { AdminReportsPanel } from "@/components/admin/AdminReportsPanel";
 import { CompanyTodayOverview } from "@/components/admin/CompanyTodayOverview";
-import { PlannerFoundationPanel } from "@/components/admin/PlannerFoundationPanel";
-import {
-  buildWorkbookPodsFromSavedPlans,
-  getEmployeePlannerItems,
-  type EmployeePlannerItem,
-  type SavedProductionWorkbookPlan,
-  type WorkbookPods,
-} from "@/components/admin/PodRoutinePlannerPanel";
 import { UserManagementPanel } from "@/components/admin/UserManagementPanel";
 import { EmployeeLanyardBadge } from "@/components/app/EmployeeLanyardBadge";
+import { MusicPanel } from "@/components/app/MusicPanel";
 import { BasecampTaskPreview } from "@/components/tasks/BasecampTaskPreview";
 import { EmployeeLogsPanel } from "@/components/timers/EmployeeLogsPanel";
 import { EmployeeTimerPanel } from "@/components/timers/EmployeeTimerPanel";
@@ -109,47 +102,12 @@ type DashboardProps = {
   todayLogs: TodayLog[];
 };
 
-type DashboardModule = "reports" | "planner" | "tasks" | "team" | "users" | "ai";
-type TeamTaskView = "basecamp" | "planner";
+type DashboardModule = "reports" | "tasks" | "team" | "users" | "ai";
 
-const plannerMonthStorageKey = "blu-time-planner-month";
 const teamPinStorageKey = "blu-time-team-pins";
-
-function currentMonthKey() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function isValidMonthKey(value: string | null) {
-  return Boolean(value && /^\d{4}-\d{2}$/.test(value));
-}
-
-function initialPlannerMonthKey() {
-  if (typeof window === "undefined") return currentMonthKey();
-  const monthFromUrl = new URLSearchParams(window.location.search).get("plannerMonth");
-  if (isValidMonthKey(monthFromUrl)) return monthFromUrl as string;
-  const monthFromStorage = window.localStorage.getItem(plannerMonthStorageKey);
-  if (isValidMonthKey(monthFromStorage)) return monthFromStorage as string;
-  return currentMonthKey();
-}
-
-function persistPlannerMonthKey(monthKey: string) {
-  if (typeof window === "undefined" || !isValidMonthKey(monthKey)) return;
-  window.localStorage.setItem(plannerMonthStorageKey, monthKey);
-  const url = new URL(window.location.href);
-  url.searchParams.set("plannerMonth", monthKey);
-  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-}
-
-function formatMonthLabel(monthKey: string) {
-  const [year, month] = monthKey.split("-").map(Number);
-  if (!year || !month) return monthKey;
-  return new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
-}
 
 const MODULE_META = {
   reports: { icon: "ti-chart-bar",      description: "Work logs, filters & PDF export" },
-  planner: { icon: "ti-calendar-month", description: "Month-wise pod plan & CSV" },
   tasks:   { icon: "ti-check",          description: "Today and overdue tasks" },
   team:    { icon: "ti-search",         description: "Search people and open their tasks" },
   users:   { icon: "ti-users",          description: "Create & edit employee logins" },
@@ -196,24 +154,15 @@ export function BluTimeDashboard({
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
   const [activeModule, setActiveModule] = useState<DashboardModule | null>(null);
-  const [employeePlannerMonth, setEmployeePlannerMonth] = useState(currentMonthKey());
-  const [savedWorkbookPods, setSavedWorkbookPods] = useState<WorkbookPods | null>(null);
   const hasBasecampId = Boolean(user.basecampPersonId);
   const isEmployeeOnly =
     !canViewCompanyDashboard && !canManagePlanner && !canManageUsers && !canUseAiBrain;
   const isAccountManager = isAccountManagerDepartment(user.departmentName);
-  const showPersonalPlannerHighlights = isEmployeeOnly && !isAccountManager;
+  const showEmployeeHome = isEmployeeOnly && !isAccountManager;
   const showModuleNavigation = !isEmployeeOnly || isAccountManager;
-  const employeePlannerItems = getEmployeePlannerItems(
-    employeePlannerMonth,
-    user.name,
-    user.departmentName,
-    savedWorkbookPods ?? undefined
-  );
 
   const modules: Array<{ id: DashboardModule; label: string }> = [
     ...(canViewCompanyDashboard ? [{ id: "reports" as const, label: "Reports" }] : []),
-    ...(canManagePlanner || isAccountManager ? [{ id: "planner" as const, label: "Planner" }] : []),
     ...(showModuleNavigation && (hasBasecampId || isAccountManager) ? [{ id: "tasks" as const, label: "Tasks" }] : []),
     ...(canManagePlanner || isAccountManager ? [{ id: "team" as const, label: "Team" }] : []),
     ...(canManageUsers          ? [{ id: "users"   as const, label: "Users"   }] : []),
@@ -224,48 +173,6 @@ export function BluTimeDashboard({
     setLoggingOut(true);
     await fetch("/api/auth/logout", { method: "POST" });
     router.refresh();
-  }
-
-  useEffect(() => {
-    setEmployeePlannerMonth(initialPlannerMonthKey());
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadSavedWorkbook() {
-      const response = await fetch(
-        `/api/production-workbook?monthKey=${encodeURIComponent(employeePlannerMonth)}`,
-        { cache: "no-store" }
-      );
-      const payload = (await response.json().catch(() => null)) as {
-        plans?: SavedProductionWorkbookPlan[];
-      } | null;
-      if (cancelled) return;
-      setSavedWorkbookPods(
-        response.ok && payload?.plans?.length
-          ? buildWorkbookPodsFromSavedPlans(payload.plans)
-          : null
-      );
-    }
-
-    function handleWorkbookSaved(event: Event) {
-      const savedMonth = (event as CustomEvent<{ monthKey?: string }>).detail?.monthKey;
-      if (!savedMonth || savedMonth === employeePlannerMonth) void loadSavedWorkbook();
-    }
-
-    void loadSavedWorkbook();
-    window.addEventListener("production-workbook-saved", handleWorkbookSaved);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("production-workbook-saved", handleWorkbookSaved);
-    };
-  }, [employeePlannerMonth]);
-
-  function changeEmployeePlannerMonth(nextMonthKey: string) {
-    if (!isValidMonthKey(nextMonthKey)) return;
-    setEmployeePlannerMonth(nextMonthKey);
-    persistPlannerMonthKey(nextMonthKey);
   }
 
   return (
@@ -371,13 +278,8 @@ export function BluTimeDashboard({
           </div>
 
           {/* ── Cols 2–3 ── */}
-          {showPersonalPlannerHighlights ? (
-            <EmployeePlannerHighlights
-              departmentName={user.departmentName}
-              items={employeePlannerItems}
-              monthKey={employeePlannerMonth}
-              onMonthChange={changeEmployeePlannerMonth}
-            />
+          {showEmployeeHome ? (
+            <MusicPanel />
           ) : showModuleNavigation ? (
             <div
               className="md:col-span-2"
@@ -553,7 +455,7 @@ export function BluTimeDashboard({
           <CompanyTodayOverview activeWork={activeWork} todayLogs={todayLogs} />
         ) : null}
 
-        {showPersonalPlannerHighlights ? <BasecampTaskPreview hasBasecampId={hasBasecampId} /> : null}
+        {showEmployeeHome ? <BasecampTaskPreview hasBasecampId={hasBasecampId} /> : null}
         {activeModule === "tasks" ? <BasecampTaskPreview hasBasecampId={hasBasecampId} /> : null}
 
         <EmployeeTimerPanel hasBasecampId={hasBasecampId} showRecentLogs={false} />
@@ -561,15 +463,7 @@ export function BluTimeDashboard({
         <EmployeeLogsPanel />
 
         {activeModule === "reports" ? <AdminReportsPanel /> : null}
-        {activeModule === "planner" ? <PlannerFoundationPanel /> : null}
-        {activeModule === "team" ? (
-          <TeamTasksPanel
-            members={teamMembers}
-            monthKey={employeePlannerMonth}
-            onMonthChange={changeEmployeePlannerMonth}
-            workbookPods={savedWorkbookPods ?? undefined}
-          />
-        ) : null}
+        {activeModule === "team" ? <TeamTasksPanel members={teamMembers} /> : null}
         {activeModule === "users"   ? <UserManagementPanel departments={departments} users={users} /> : null}
         {activeModule === "ai"      ? <AiMasterBrainPanel /> : null}
       </section>
@@ -577,45 +471,9 @@ export function BluTimeDashboard({
   );
 }
 
-function PlannerTaskCards({ emptyText, items }: { emptyText: string; items: EmployeePlannerItem[] }) {
-  return items.length > 0 ? (
-    <div className="scroll-area mt-5 grid max-h-[520px] gap-3 overflow-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
-      {items.map((item, index) => (
-        <article
-          key={`${item.podName}-${item.weekName}-${item.client}-${item.role}-${item.dateLabel}-${index}`}
-          className={`planner-employee-card planner-employee-${item.role.toLowerCase()}${item.dueSoon ? " planner-employee-due-soon" : ""}`}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="font-mono text-xs uppercase">{item.dateLabel}</span>
-            <span className="rounded-full border border-current px-2 py-1 text-xs">{item.role}</span>
-          </div>
-          <h3 className="mt-3 text-xl font-normal">{item.client}</h3>
-          <p className="mt-1 text-sm">{item.service} / {item.podName} / {item.weekName}</p>
-          <p className="mt-3 whitespace-pre-wrap text-sm">{item.task}</p>
-        </article>
-      ))}
-    </div>
-  ) : (
-    <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
-      {emptyText}
-    </div>
-  );
-}
-
-function TeamTasksPanel({
-  members,
-  monthKey,
-  onMonthChange,
-  workbookPods,
-}: {
-  members: TeamMember[];
-  monthKey: string;
-  onMonthChange: (monthKey: string) => void;
-  workbookPods?: WorkbookPods;
-}) {
+function TeamTasksPanel({ members }: { members: TeamMember[] }) {
   const [query, setQuery] = useState("");
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
-  const [selectedView, setSelectedView] = useState<TeamTaskView | null>(null);
   const [pinnedMemberIds, setPinnedMemberIds] = useState<string[]>([]);
   const [tasks, setTasks] = useState<TeamBasecampTask[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
@@ -633,10 +491,6 @@ function TeamTasksPanel({
   }, [normalizedQuery, members]);
   const pinnedMembers = members.filter((member) => pinnedMemberIds.includes(member.id));
   const selectedMember = members.find((member) => member.id === selectedMemberId) ?? null;
-  const selectedPlannerTasks =
-    selectedMember && selectedView === "planner"
-      ? getEmployeePlannerItems(monthKey, selectedMember.name, selectedMember.departmentName, workbookPods)
-      : [];
   const taskCounts = {
     overdue: tasks.filter((task) => task.dueStatus === "overdue" || task.overdue).length,
     today: tasks.filter((task) => task.dueStatus === "today").length,
@@ -678,7 +532,7 @@ function TeamTasksPanel({
       setTaskMessage(payload?.error ?? payload?.warning ?? "");
     }
 
-    if (!selectedMember || selectedView !== "basecamp") {
+    if (!selectedMember) {
       setTasks([]);
       setTaskMessage("");
       setLoadingTasks(false);
@@ -690,12 +544,7 @@ function TeamTasksPanel({
     return () => {
       cancelled = true;
     };
-  }, [selectedMember?.id, selectedView]);
-
-  function openMember(member: TeamMember, view: TeamTaskView) {
-    setSelectedMemberId(member.id);
-    setSelectedView(view);
-  }
+  }, [selectedMember?.id]);
 
   function togglePinnedMember(member: TeamMember) {
     setPinnedMemberIds((current) => {
@@ -740,17 +589,10 @@ function TeamTasksPanel({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => openMember(member, "basecamp")}
+            onClick={() => setSelectedMemberId(member.id)}
             className="rounded-full border border-[var(--border-soft)] px-3 py-2 text-xs text-muted"
           >
             Basecamp tasks
-          </button>
-          <button
-            type="button"
-            onClick={() => openMember(member, "planner")}
-            className="rounded-full border border-[var(--border-soft)] px-3 py-2 text-xs text-muted"
-          >
-            Planner tasks
           </button>
         </div>
       </article>
@@ -763,21 +605,14 @@ function TeamTasksPanel({
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">Team</p>
           <h2 className="mt-2 text-3xl font-normal">Search team tasks</h2>
-          <p className="mt-2 text-base text-muted">Search a person, then open Basecamp tasks or planner tasks.</p>
+          <p className="mt-2 text-base text-muted">Search a person, then open their Basecamp tasks.</p>
         </div>
-        {selectedView === "basecamp" ? (
+        {selectedMember ? (
           <div className="flex flex-wrap gap-2 text-sm">
           <span className="rounded-full border px-3 py-2 task-status-overdue">{taskCounts.overdue} overdue</span>
           <span className="rounded-full border px-3 py-2 task-status-today">{taskCounts.today} today</span>
           <span className="rounded-full border border-[var(--border-soft)] px-3 py-2 text-muted">{taskCounts.upcoming} upcoming</span>
         </div>
-        ) : selectedView === "planner" ? (
-          <input
-            type="month"
-            value={monthKey}
-            onChange={(event) => onMonthChange(event.target.value)}
-            className="max-w-56 border border-[var(--border)] bg-[var(--surface)] px-4 py-3"
-          />
         ) : null}
       </div>
 
@@ -788,7 +623,6 @@ function TeamTasksPanel({
           onChange={(event) => {
             setQuery(event.target.value);
             setSelectedMemberId(null);
-            setSelectedView(null);
           }}
           placeholder="Search Durga, Bibin, Lekshmi, Anandu..."
           className="w-full border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base"
@@ -827,117 +661,61 @@ function TeamTasksPanel({
               <h3 className="mt-2 text-2xl font-normal">{selectedMember.name}</h3>
               <p className="mt-1 text-base text-muted">{selectedMember.departmentName ?? "Team member"}</p>
             </div>
-            {selectedView === "basecamp" ? (
-              <span className="rounded-full border border-[var(--border-soft)] px-4 py-2 text-sm text-muted">
-                {tasks.length} Basecamp tasks
-              </span>
-            ) : null}
-            {selectedView === "planner" ? (
-              <span className="rounded-full border border-[var(--border-soft)] px-4 py-2 text-sm text-muted">
-                {selectedPlannerTasks.length} planner tasks
-              </span>
-            ) : null}
+            <span className="rounded-full border border-[var(--border-soft)] px-4 py-2 text-sm text-muted">
+              {tasks.length} Basecamp tasks
+            </span>
           </div>
 
-          {selectedView === "basecamp" ? (
-            <>
-              {loadingTasks ? <p className="mt-4 text-sm text-muted">Loading Basecamp tasks...</p> : null}
-              {taskMessage ? <p className="mt-4 text-sm text-muted">{taskMessage}</p> : null}
+          {loadingTasks ? <p className="mt-4 text-sm text-muted">Loading Basecamp tasks...</p> : null}
+          {taskMessage ? <p className="mt-4 text-sm text-muted">{taskMessage}</p> : null}
 
-              {!loadingTasks && !taskMessage && tasks.length === 0 ? (
-                <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
-                  No assigned Basecamp tasks found for this person.
-                </div>
-              ) : null}
-
-              {tasks.length > 0 ? (
-                <div className="mt-5 grid gap-3">
-                  {tasks.map((task) => (
-                    <article
-                      key={`${task.projectId ?? "project"}-${task.id}-${task.parentId ?? "parent"}`}
-                      className={`module-theme-item border border-[var(--border)] p-5 ${teamTaskToneClass(task)}`}
-                    >
-                      <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                            <span>{task.projectName}</span>
-                            <span className={`rounded-full border px-2 py-1 ${teamTaskStatusClass(task)}`}>
-                              {teamTaskStatusLabel(task)}{task.dueOn ? `: ${task.dueOn}` : ""}
-                            </span>
-                            {task.isChild ? <span>Child step</span> : null}
-                          </div>
-                          <h4 className="mt-3 text-2xl font-normal">{task.title}</h4>
-                          {task.parentTitle ? <p className="mt-1 text-sm text-muted">{task.parentTitle}</p> : null}
-                        </div>
-
-                        {task.appUrl ? (
-                          <a
-                            href={task.appUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-block rounded-full border border-[var(--border)] px-4 py-2 text-sm lg:justify-self-end"
-                          >
-                            Open in Basecamp
-                          </a>
-                        ) : null}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : null}
-            </>
+          {!loadingTasks && !taskMessage && tasks.length === 0 ? (
+            <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
+              No assigned Basecamp tasks found for this person.
+            </div>
           ) : null}
 
-          {selectedView === "planner" ? (
-            <PlannerTaskCards
-              items={selectedPlannerTasks}
-              emptyText="No planner rows found for this person in this month."
-            />
+          {tasks.length > 0 ? (
+            <div className="mt-5 grid gap-3">
+              {tasks.map((task) => (
+                <article
+                  key={`${task.projectId ?? "project"}-${task.id}-${task.parentId ?? "parent"}`}
+                  className={`module-theme-item border border-[var(--border)] p-5 ${teamTaskToneClass(task)}`}
+                >
+                  <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                        <span>{task.projectName}</span>
+                        <span className={`rounded-full border px-2 py-1 ${teamTaskStatusClass(task)}`}>
+                          {teamTaskStatusLabel(task)}{task.dueOn ? `: ${task.dueOn}` : ""}
+                        </span>
+                        {task.isChild ? <span>Child step</span> : null}
+                      </div>
+                      <h4 className="mt-3 text-2xl font-normal">{task.title}</h4>
+                      {task.parentTitle ? <p className="mt-1 text-sm text-muted">{task.parentTitle}</p> : null}
+                    </div>
+
+                    {task.appUrl ? (
+                      <a
+                        href={task.appUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-block rounded-full border border-[var(--border)] px-4 py-2 text-sm lg:justify-self-end"
+                      >
+                        Open in Basecamp
+                      </a>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
+            </div>
           ) : null}
         </div>
       ) : (
         <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
-          Search a name, or use a pinned person, then choose Basecamp tasks or Planner tasks.
+          Search a name, or use a pinned person, then open their Basecamp tasks.
         </div>
       )}
     </section>
-  );
-}
-
-function EmployeePlannerHighlights({
-  departmentName,
-  items,
-  monthKey,
-  onMonthChange,
-}: {
-  departmentName: string | null;
-  items: EmployeePlannerItem[];
-  monthKey: string;
-  onMonthChange: (monthKey: string) => void;
-}) {
-  return (
-    <div className="premium-panel p-6 md:col-span-2">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted">Planner dates</p>
-          <h2 className="mt-3 text-2xl font-normal">{formatMonthLabel(monthKey)}</h2>
-          <p className="mt-1 text-base text-muted">{departmentName ?? "Employee"} workbook tasks</p>
-        </div>
-        <input
-          type="month"
-          value={monthKey}
-          onChange={(event) => onMonthChange(event.target.value)}
-          className="max-w-56 border border-[var(--border)] bg-[var(--surface)] px-4 py-3"
-        />
-      </div>
-
-      {items.length > 0 ? (
-        <PlannerTaskCards items={items} emptyText="No planner rows found for this month." />
-      ) : (
-        <div className="mt-5 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-4 text-muted">
-          No planner rows found for this month.
-        </div>
-      )}
-    </div>
   );
 }

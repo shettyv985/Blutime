@@ -46,17 +46,14 @@ It is a full-stack Next.js application backed by Turso/libSQL and Drizzle ORM. E
 - Exports the visible report through the browser's PDF print flow.
 - Allows HR/operations and bosses to correct or delete company logs.
 
-### Production planner
+### Music
 
-- Maintains month-specific client plans for the `ROBISH`, `RELSA`, and `RESHMA` production pods.
-- Records each client's service type, video/static targets, and assigned writers, designers, and editors.
-- Generates week-by-week and day-by-day production allocations.
-- Applies role capacity, shoot-day, buffer-week, direct-edit, and cross-pod rules.
-- Saves plans to the database and exposes relevant planner tasks to employees.
-- Lets authorized users download the generated plan as an Excel-compatible `.xls` workbook.
-- Includes a lower-level monthly deliverable and assignment engine in the database/API for social and performance deliverables.
+- Gives employees a compact YouTube player on their home screen, in the space the old planner used.
+- Plays a team default video, playlist, or live stream set by `NEXT_PUBLIC_YOUTUBE_DEFAULT_URL`.
+- Lets each person paste their own YouTube link; it is saved in that browser only.
+- Uses the privacy-enhanced `youtube-nocookie.com` embed. No login is needed, but YouTube may show ads, and some label-owned videos cannot be embedded.
 
-The dashboard currently uses the production-workbook planner at `/api/production-workbook`. The more granular `/api/admin/planner` and `/api/admin/planner/suggestions` endpoints are retained as a second planner foundation for deliverable generation and assignment suggestions.
+The production planner has been removed from the app. Its database tables (`production_workbook_plans`, `monthly_plans`, `monthly_plan_deliverables`, `planner_assignments`) are still in the schema so existing data is kept.
 
 ### AI Master Brain
 
@@ -86,10 +83,10 @@ The application enforces access in server routes as well as in the UI.
 
 | Role or group | Main access |
 | --- | --- |
-| Employee | Own timers, Basecamp tasks, planner highlights, and work-log history |
-| Lead | Employee features plus planner and team task views |
-| Account Manager department | Planner, team search, and team task views in addition to personal work |
-| HR / Operations | Company dashboard, reports, planner, user management, and category management |
+| Employee | Own timers, Basecamp tasks, music panel, and work-log history |
+| Lead | Employee features plus team task views |
+| Account Manager department | Team search and team task views in addition to personal work |
+| HR / Operations | Company dashboard, reports, user management, and category management |
 | Boss | All operational modules, including the AI Master Brain |
 | `hr_ops` role in the `hr` department | AI Master Brain access in addition to HR/operations access |
 
@@ -103,8 +100,7 @@ The four stored access-role values are `employee`, `lead`, `hr_ops`, and `boss`.
 4. The employee pauses/resumes work as needed, adds an output summary and NOKK score, and stops the timer.
 5. BluTime turns the timer into a permanent time entry and keeps a snapshot of the external task data.
 6. HR/operations and bosses review live work, reports, grouped totals, and corrections.
-7. Leads and operations users build monthly production plans; employees see their assigned planner dates.
-8. Authorized leadership users can ask the AI Master Brain questions across BluTime, Basecamp, Google Sheets, and uploaded files.
+7. Authorized leadership users can ask the AI Master Brain questions across BluTime, Basecamp, Google Sheets, and uploaded files.
 
 ## Architecture
 
@@ -119,8 +115,7 @@ Next.js App Router
   |-- app/api/auth/*               Login, logout, current session
   |-- app/api/work/*               Timers and time entries
   |-- app/api/basecamp/*           Basecamp task access
-  |-- app/api/production-workbook  Active production planner persistence
-  |-- app/api/admin/*              Reports, users, planner, and AI
+  |-- app/api/admin/*              Reports, users, and AI
   |
   v
 Server modules
@@ -262,6 +257,12 @@ If no provider is explicitly requested, BluTime prefers Manus when `MANUS_API_KE
 
 For private sheets, share the spreadsheet with the configured service-account email.
 
+### Music
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `NEXT_PUBLIC_YOUTUBE_DEFAULT_URL` | No | YouTube video, playlist, or live-stream link that plays by default in the employee music panel; falls back to Lofi Girl's "Study Sessions" playlist. Set before building, because it is baked into the client bundle |
+
 ### Legacy Supabase variables
 
 `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are referenced only by the retained `lib/supabase.ts` prototype helper. The current application data path uses Turso and does not require these variables.
@@ -288,9 +289,11 @@ The canonical schema is [`db/schema.ts`](db/schema.ts). Migrations live in [`db/
 - `leave_records` — absence records retained for operational coverage features
 - `basecamp_connection` and `basecamp_task_cache` — integration-oriented storage
 
-### Planning
+### Planning (retired)
 
-- `production_workbook_plans` — current pod-based monthly plans
+The planner UI and APIs have been removed. These tables are kept so existing plan data is not lost:
+
+- `production_workbook_plans` — pod-based monthly plans
 - `monthly_plans` — monthly client deliverable counts
 - `monthly_plan_deliverables` — generated social/performance deliverables
 - `planner_assignments` — role owners, dates, statuses, and Basecamp completion links
@@ -351,16 +354,13 @@ Uploaded AI files are stored inside the database as base64. This is convenient f
 | `/api/work/time-entries/:id` | `PATCH`, `DELETE` | Edit or soft-delete a log |
 | `/api/basecamp/tasks` | `GET` | Read personal or authorized team Basecamp tasks |
 
-### Administration and planning
+### Administration
 
 | Endpoint | Methods | Purpose |
 | --- | --- | --- |
 | `/api/admin/users` | `GET`, `POST`, `PATCH` | Manage company users |
 | `/api/admin/categories` | `GET`, `POST`, `PATCH` | Manage timer categories |
 | `/api/admin/reports` | `GET` | Filtered company reports and grouped totals |
-| `/api/production-workbook` | `GET`, `POST` | Load and save pod-based monthly plans |
-| `/api/admin/planner` | `GET`, `POST`, `PATCH` | Manage granular monthly plans and client-team settings |
-| `/api/admin/planner/suggestions` | `GET`, `POST` | Generate/save assignment suggestions and refresh completions |
 
 ### AI
 
@@ -383,8 +383,8 @@ app/
   layout.tsx               Root metadata, font, and global shell
   page.tsx                 Session gate and server-side dashboard data
 components/
-  admin/                   Reports, planner, AI, users, company overview
-  app/                     Main dashboard and employee identity card
+  admin/                   Reports, AI, users, company overview
+  app/                     Main dashboard, employee identity card, and music panel
   auth/                    Login form
   tasks/                   Basecamp task/timer view
   timers/                  Employee timer and log panels
@@ -398,8 +398,6 @@ docs/
 lib/                       Shared client utilities and retained prototype helpers
 scripts/
   seed-initial-data.ts     Departments, categories, and boss seed
-  check-designer-allocation.ts
-                            Planner capacity regression check
 server/
   ai/                      AI context, files, Sheets, and providers
   auth/                    Passwords, sessions, and permissions
@@ -427,14 +425,6 @@ Several root-level components and `lib/supabase.ts` are retained from earlier pr
 | `npm run db:studio` | Open Drizzle Studio |
 | `npm run db:seed` | Seed defaults and the initial boss user |
 
-The planner regression script can also be run directly:
-
-```bash
-npx tsx scripts/check-designer-allocation.ts
-```
-
-It checks daily designer capacity, multi-person coverage, dynamic pod metadata, writer fairness, and generated workbook totals.
-
 ## Making database changes
 
 1. Update `db/schema.ts`.
@@ -451,7 +441,7 @@ It checks daily designer capacity, multi-person coverage, dynamic pod metadata, 
    npm run db:migrate
    ```
 
-5. Run the app, lint, build, and any relevant planner checks.
+5. Run the app, lint, and build.
 
 Do not edit production data structures without a migration.
 
@@ -486,8 +476,7 @@ Because Next.js 16 no longer runs ESLint automatically during `next build`, lint
 - AI files are stored in the database instead of external object storage.
 - Google Sheet context is row-limited to control prompt size.
 - The AI Master Brain is an internal decision-support tool and can only reason from the data supplied to it.
-- The production-workbook planner is the active planner UI; the granular planner APIs are a parallel foundation and are not currently called by the dashboard.
-- There is no general automated test command in `package.json`; lint, production build, and the planner regression script are the current verification tools.
+- There is no general automated test command in `package.json`; lint and the production build are the current verification tools.
 
 ## Further reading
 

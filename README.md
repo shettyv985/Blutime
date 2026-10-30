@@ -49,14 +49,15 @@ It is a full-stack Next.js application backed by Turso/libSQL and Drizzle ORM. E
 ### Music
 
 - Gives employees a YouTube-style music player on their home screen, in the space the old planner used.
-- Home shows trending music in India as a video grid, with category chips (Malayalam, Bollywood, Tamil, Lofi, and more) and a search bar.
-- Clicking a video opens a watch view with the player and an "Up next" list that plays automatically.
+- Home ("All") shows what's trending in **Malayalam, Hindi, Tamil, Telugu and English**, mixed together: the most-viewed music from the last month in each language. Category chips (Malayalam, Bollywood, Tamil, Telugu, English pop, Lofi, and more) and a search bar narrow it down.
+- Clicking a video opens a watch view with the player and an "Up next" list (the rest of the list the song came from) that plays automatically. Picking from the Malayalam chip keeps Up next Malayalam.
+- **Play playlist:** the playlist button next to the search bar takes a YouTube playlist link and plays that playlist in its own order. Pasting the link into the search box works too. The playlist must be public or unlisted; YouTube Mixes (`list=RD…`), Liked videos and Watch later can't be read, and the panel says so.
 - Going back to Home keeps the music playing in a mini player in the corner.
-- A pasted YouTube link in the search box plays that video directly.
+- A pasted YouTube video link in the search box plays that video directly.
 
-YouTube's own website cannot be shown inside another site (it sends `X-Frame-Options: SAMEORIGIN`), so the panel recreates its browse and watch flow with the YouTube Data API on the server and plays videos through the official YouTube IFrame Player API (`youtube-nocookie.com`). People are not signed in to YouTube there, so personal playlists and history are not available.
+YouTube's own website cannot be shown inside another site (it sends `X-Frame-Options: SAMEORIGIN`), so the panel recreates its browse and watch flow with the YouTube Data API on the server and plays videos through the official YouTube IFrame Player API (`youtube-nocookie.com`). People are not signed in to YouTube there, so their own YouTube library and history are not available; that's why playlists are opened by link.
 
-Quota: the trending home feed costs 1 unit per refresh, but each new search or category costs 100 of the default 10,000 daily units, about 100 new searches a day across the company. Results are kept in Next's shared data cache (12 hours for searches, 1 hour for trending), so repeated searches are free. Request a quota increase in Google Cloud if the team needs more.
+Quota: the default daily quota is 10,000 units. The home feed runs one search per language (5 × 100 units), cached for 12 hours, so about 1,000 units a day. Each new search or chip costs 100 units, also cached for 12 hours, so repeated searches are free; that's about 90 new searches a day across the company. Playlist links cost 1 unit per 50 songs. Request a quota increase in Google Cloud if the team needs more.
 
 The production planner has been removed from the app. Its database tables (`production_workbook_plans`, `monthly_plans`, `monthly_plan_deliverables`, `planner_assignments`) are still in the schema so existing data is kept.
 
@@ -310,6 +311,9 @@ The planner UI and APIs have been removed. These tables are kept so existing pla
 - `ai_file_sources` — uploaded files, base64 storage, and extracted text
 - `ai_chat_sessions` — chat messages, selected context, provider, and Manus task state
 
+### Music
+
+
 ## Authentication and security
 
 - Accounts are admin-created; there is no public signup route.
@@ -359,7 +363,7 @@ Uploaded AI files are stored inside the database as base64. This is convenient f
 | `/api/work/time-entries` | `GET` | Read the current user's log history |
 | `/api/work/time-entries/:id` | `PATCH`, `DELETE` | Edit or soft-delete a log |
 | `/api/basecamp/tasks` | `GET` | Read personal or authorized team Basecamp tasks |
-| `/api/music/videos` | `GET` | Trending music, or YouTube search results with `?q=`, for the music panel |
+| `/api/music/videos` | `GET` | Trending Malayalam/Hindi/Tamil/Telugu/English music; `?q=` search; `?list=` songs in a YouTube playlist |
 
 ### Administration
 

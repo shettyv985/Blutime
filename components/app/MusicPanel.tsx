@@ -20,10 +20,15 @@ type Feed = {
   error: string;
 };
 
+// The list a song was picked from (the feed, a search, or a pasted playlist) is the "Up next" queue.
 type NowPlaying = {
   list: Video[];
   index: number;
+  // Set when the queue is a pasted YouTube playlist.
+  playlistName: string | null;
 };
+
+type View = "home" | "watch";
 
 type YouTubePlayer = {
   loadVideoById: (videoId: string) => void;
@@ -40,7 +45,10 @@ type YouTubeNamespace = {
       width?: string;
       height?: string;
       playerVars?: Record<string, number>;
-      events?: { onStateChange?: (event: { data: number; target: YouTubePlayer }) => void };
+      events?: {
+        onStateChange?: (event: { data: number; target: YouTubePlayer }) => void;
+        onError?: (event: { data: number; target: YouTubePlayer }) => void;
+      };
     }
   ) => YouTubePlayer;
   PlayerState: { ENDED: number; PLAYING: number };
@@ -56,17 +64,19 @@ declare global {
 // YouTube's own site refuses to be framed (X-Frame-Options: SAMEORIGIN), so this panel recreates its
 // browse/watch flow with the YouTube Data API and plays videos through the official IFrame Player API.
 const homeChip = "All";
-const chips = [homeChip, "Malayalam", "Bollywood", "Tamil", "Lofi", "Devotional", "English pop", "Instrumental"];
+const chips = [homeChip, "Malayalam", "Bollywood", "Tamil", "Telugu", "English pop", "Lofi", "Devotional", "Instrumental"];
 const chipQueries: Record<string, string> = {
   Malayalam: "malayalam songs",
   Bollywood: "bollywood songs",
   Tamil: "tamil songs",
+  Telugu: "telugu songs",
   Lofi: "lofi music",
   Devotional: "devotional songs",
   "English pop": "english pop songs",
   Instrumental: "instrumental music for work",
 };
 const videoIdPattern = /^[A-Za-z0-9_-]{11}$/;
+const playlistIdPattern = /^[A-Za-z0-9_-]{10,64}$/;
 const pastedLinkTitle = "YouTube video";
 
 let youTubeApiPromise: Promise<YouTubeNamespace> | null = null;
@@ -90,24 +100,43 @@ function loadYouTubeApi() {
   return youTubeApiPromise;
 }
 
-function videoIdFromLink(input: string) {
+// Understands youtu.be/…, youtube.com/watch?v=…&list=…, youtube.com/playlist?list=…, shorts, live, embed and
+// music.youtube.com links. Returns null when the text isn't a YouTube link.
+function parseYouTubeLink(input: string) {
   const trimmed = input.trim();
   if (!trimmed || /\s/.test(trimmed)) return null;
 
   try {
     const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
     const host = url.hostname.replace(/^(www|m|music)\./, "");
+    if (host !== "youtu.be" && host !== "youtube.com" && host !== "youtube-nocookie.com") return null;
+
     const pathParts = url.pathname.split("/").filter(Boolean);
     let videoId: string | null = null;
 
     if (host === "youtu.be") videoId = pathParts[0] ?? null;
-    if (host === "youtube.com" && pathParts[0] === "watch") videoId = url.searchParams.get("v");
-    if (host === "youtube.com" && ["shorts", "live", "embed"].includes(pathParts[0] ?? "")) videoId = pathParts[1] ?? null;
+    if (pathParts[0] === "watch") videoId = url.searchParams.get("v");
+    if (["shorts", "live", "embed"].includes(pathParts[0] ?? "")) videoId = pathParts[1] ?? null;
 
-    return videoId && videoIdPattern.test(videoId) ? videoId : null;
+    const listId = url.searchParams.get("list");
+    const result = {
+      videoId: videoId && videoIdPattern.test(videoId) ? videoId : null,
+      playlistId: listId && playlistIdPattern.test(listId) ? listId : null,
+    };
+
+    return result.videoId || result.playlistId ? result : null;
   } catch {
     return null;
   }
+}
+
+// YouTube Mixes ("RD…") and personal lists can't be read through the API.
+function isImportablePlaylist(playlistId: string) {
+  return !/^(RD|UL|LL|WL)/.test(playlistId);
+}
+
+function placeholderVideo(id: string): Video {
+  return { id, title: pastedLinkTitle, channelTitle: "", thumbnailUrl: null, publishedAt: null, durationSeconds: null, viewCount: null, isLive: false };
 }
 
 function formatDuration(totalSeconds: number) {
@@ -152,7 +181,11 @@ function Thumbnail({ video, className }: { video: Video; className: string }) {
         // Remote YouTube thumbnails; next/image would need a remote-image config for these decorative images.
         // eslint-disable-next-line @next/next/no-img-element
         <img src={video.thumbnailUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
-      ) : null}
+      ) : (
+        <span className="flex h-full w-full items-center justify-center text-muted">
+          <i className="ti ti-music" aria-hidden="true" />
+        </span>
+      )}
       {video.isLive ? (
         <span className="absolute bottom-1 right-1 rounded bg-[#cc0000] px-1 text-[11px] font-medium text-white">LIVE</span>
       ) : video.durationSeconds ? (
@@ -164,18 +197,52 @@ function Thumbnail({ video, className }: { video: Video; className: string }) {
   );
 }
 
+function IconButton({
+  icon,
+  label,
+  onClick,
+  className = "",
+  disabled = false,
+}: {
+  icon: string;
+  label: string;
+  onClick: () => void;
+  className?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full! hover:bg-white/10! disabled:opacity-40 ${className}`}
+    >
+      <i className={`ti ${icon} text-base`} aria-hidden="true" />
+    </button>
+  );
+}
+
+
 export function MusicPanel() {
-  const [view, setView] = useState<"home" | "watch">("home");
+  const [view, setView] = useState<View>("home");
   const [activeChip, setActiveChip] = useState<string | null>(homeChip);
   const [query, setQuery] = useState("");
   const [feed, setFeed] = useState<Feed>({ key: homeChip, videos: [], loading: true, error: "" });
   const [nowPlaying, setNowPlaying] = useState<NowPlaying | null>(null);
+  const [playlistBarOpen, setPlaylistBarOpen] = useState(false);
+  const [playlistLink, setPlaylistLink] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
   const feedCacheRef = useRef(new Map<string, Video[]>());
   const playerHostRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YouTubePlayer | null>(null);
   const nowPlayingRef = useRef<NowPlaying | null>(null);
   const loadedVideoIdRef = useRef<string | null>(null);
   const currentVideo = nowPlaying ? nowPlaying.list[nowPlaying.index] : null;
+
+  // ---- data loading -------------------------------------------------------------------------------------
 
   const fetchFeed = useCallback(async (key: string, searchQuery: string) => {
     const cached = feedCacheRef.current.get(key);
@@ -201,10 +268,18 @@ export function MusicPanel() {
     void fetchFeed(homeChip, "");
   }, [fetchFeed]);
 
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(""), 6000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
+  // ---- playback -----------------------------------------------------------------------------------------
+
   const playNext = useCallback(() => {
     const current = nowPlayingRef.current;
     if (current && current.index + 1 < current.list.length) {
-      setNowPlaying({ list: current.list, index: current.index + 1 });
+      setNowPlaying({ ...current, index: current.index + 1 });
     }
   }, []);
 
@@ -217,7 +292,7 @@ export function MusicPanel() {
       const list = current.list.map((item, index) =>
         index === current.index ? { ...item, title: data.title ?? item.title, channelTitle: data.author ?? item.channelTitle } : item
       );
-      return { list, index: current.index };
+      return { ...current, list };
     });
   }, []);
 
@@ -250,6 +325,8 @@ export function MusicPanel() {
             if (event.data === youTube.PlayerState.ENDED) playNext();
             if (event.data === youTube.PlayerState.PLAYING) fillPastedVideoDetails(event.target);
           },
+          // Removed, private or not-embeddable videos: move on instead of stopping the music.
+          onError: () => playNext(),
         },
       });
     });
@@ -262,6 +339,77 @@ export function MusicPanel() {
   useEffect(() => {
     return () => playerRef.current?.destroy();
   }, []);
+
+  function play(list: Video[], index: number, playlistName: string | null = null) {
+    setNowPlaying({ list, index, playlistName });
+    setView("watch");
+  }
+
+  function jumpTo(index: number) {
+    setNowPlaying((current) => (current && index >= 0 && index < current.list.length ? { ...current, index } : current));
+  }
+
+  function closePlayer() {
+    playerRef.current?.destroy();
+    playerRef.current = null;
+    loadedVideoIdRef.current = null;
+    playerHostRef.current?.replaceChildren();
+    setNowPlaying(null);
+    setView("home");
+  }
+
+  // ---- pasted YouTube links -------------------------------------------------------------------------------
+
+  async function playPastedLink(link: { videoId: string | null; playlistId: string | null }) {
+    if (link.playlistId && isImportablePlaylist(link.playlistId)) {
+      setBusy(true);
+      const response = await fetch(`/api/music/videos?list=${encodeURIComponent(link.playlistId)}`, { cache: "no-store" });
+      const payload = (await response.json().catch(() => null)) as {
+        playlist?: { id: string; title: string; videos: Video[] };
+        error?: string;
+      } | null;
+      setBusy(false);
+
+      const playlist = payload?.playlist;
+      if (response.ok && playlist && playlist.videos.length > 0) {
+        // A link copied while a song in the playlist was playing starts from that song.
+        const startIndex = Math.max(0, playlist.videos.findIndex((video) => video.id === link.videoId));
+        play(playlist.videos, startIndex, playlist.title);
+        return true;
+      }
+
+      setNotice(
+        response.ok
+          ? "That playlist has no songs that can be played here."
+          : (payload?.error ?? "Couldn't open that playlist.")
+      );
+      if (!link.videoId) return false;
+    }
+
+    if (link.videoId) {
+      // A song link, or a song inside a YouTube Mix (Mixes can't be read), plays on its own.
+      play([placeholderVideo(link.videoId)], 0);
+      return true;
+    }
+
+    setNotice("YouTube Mixes, Liked videos and Watch later can't be opened here. Paste a public or unlisted playlist link instead.");
+    return false;
+  }
+
+  async function submitPlaylistLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const link = parseYouTubeLink(playlistLink);
+    if (!link?.playlistId) {
+      setNotice("Paste a YouTube playlist link, like youtube.com/playlist?list=…");
+      return;
+    }
+    if (await playPastedLink(link)) {
+      setPlaylistLink("");
+      setPlaylistBarOpen(false);
+    }
+  }
+
+  // ---- navigation -----------------------------------------------------------------------------------------
 
   function showFeed(key: string, searchQuery: string) {
     setView("home");
@@ -279,14 +427,11 @@ export function MusicPanel() {
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = query.trim();
-    const linkedVideoId = videoIdFromLink(trimmed);
+    const link = parseYouTubeLink(trimmed);
 
-    if (linkedVideoId) {
-      play(
-        [{ id: linkedVideoId, title: pastedLinkTitle, channelTitle: "", thumbnailUrl: null, publishedAt: null, durationSeconds: null, viewCount: null, isLive: false }],
-        0
-      );
+    if (link) {
       setQuery("");
+      void playPastedLink(link);
       return;
     }
 
@@ -295,21 +440,9 @@ export function MusicPanel() {
     showFeed(`search:${trimmed.toLowerCase()}`, trimmed);
   }
 
-  function play(list: Video[], index: number) {
-    setNowPlaying({ list, index });
-    setView("watch");
-  }
-
-  function closePlayer() {
-    playerRef.current?.destroy();
-    playerRef.current = null;
-    loadedVideoIdRef.current = null;
-    playerHostRef.current?.replaceChildren();
-    setNowPlaying(null);
-    setView("home");
-  }
-
   const showMiniPlayer = Boolean(nowPlaying) && view === "home";
+  const upNextTitle = nowPlaying?.playlistName ?? "Up next";
+  const upNextSubtitle = nowPlaying?.playlistName ? `Playlist · ${nowPlaying.index + 1} / ${nowPlaying.list.length}` : "";
 
   return (
     <div className="premium-panel flex h-[640px] min-w-0 flex-col overflow-hidden md:col-span-2">
@@ -356,10 +489,57 @@ export function MusicPanel() {
             </button>
           </div>
         </form>
+
+        <button
+          type="button"
+          onClick={() => setPlaylistBarOpen((open) => !open)}
+          aria-expanded={playlistBarOpen}
+          title="Play a YouTube playlist from its link"
+          className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full! px-3 text-sm ${
+            playlistBarOpen ? "bg-white! text-black!" : "bg-white/10! hover:bg-white/20!"
+          }`}
+        >
+          <i className="ti ti-playlist text-lg" aria-hidden="true" />
+          <span className="hidden lg:inline">Play playlist</span>
+        </button>
       </div>
+
+      {playlistBarOpen ? (
+        <form onSubmit={submitPlaylistLink} className="flex items-center gap-2 border-b border-[var(--border-soft)] px-4 py-2.5">
+          <i className="ti ti-link text-muted" aria-hidden="true" />
+          <input
+            value={playlistLink}
+            onChange={(event) => setPlaylistLink(event.target.value)}
+            placeholder="Paste your YouTube playlist link"
+            aria-label="YouTube playlist link"
+            autoFocus
+            className="min-h-0! min-w-0 flex-1 rounded-none! border-0! bg-transparent! py-1 text-sm outline-none"
+          />
+          <button
+            type="submit"
+            disabled={!playlistLink.trim() || busy}
+            className="flex items-center gap-1.5 rounded-full! bg-white! px-4 py-1.5 text-xs font-medium text-black! disabled:opacity-40"
+          >
+            <i className={`ti ${busy ? "ti-loader-2 animate-spin" : "ti-player-play-filled"}`} aria-hidden="true" />
+            {busy ? "Opening…" : "Play"}
+          </button>
+        </form>
+      ) : null}
 
       {/* Content */}
       <div className="relative min-h-0 flex-1">
+        {notice ? (
+          <div
+            role="status"
+            className="absolute left-1/2 top-3 z-40 flex max-w-[90%] -translate-x-1/2 items-center gap-2 rounded-lg bg-[#f1f1f1] px-4 py-2 text-sm text-black shadow-lg"
+          >
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice("")} aria-label="Dismiss" className="text-black/60 hover:text-black">
+              <i className="ti ti-x" aria-hidden="true" />
+            </button>
+          </div>
+        ) : null}
+
         {view === "home" ? (
           <div className={`scroll-area absolute inset-0 overflow-auto px-4 ${showMiniPlayer ? "pb-[236px]" : "pb-4"}`}>
             <div className="sticky top-0 z-10 -mx-4 flex gap-2 overflow-x-auto bg-[#0f0f0f]/95 px-4 py-3 backdrop-blur [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -425,34 +605,51 @@ export function MusicPanel() {
             <div className="flex min-w-0 flex-col xl:flex-1">
               {/* Same size as the player, which sits on top of this space. */}
               <div className="aspect-video w-full shrink-0" />
-              <h3 className="mt-3 line-clamp-2 text-base font-medium leading-snug">{currentVideo.title}</h3>
-              <p className="mt-1 truncate text-xs text-muted">
-                {[currentVideo.channelTitle, videoMeta(currentVideo)].filter(Boolean).join(" · ")}
-              </p>
+              <div className="mt-3 flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <h3 className="line-clamp-2 text-base font-medium leading-snug">{currentVideo.title}</h3>
+                  <p className="mt-1 truncate text-xs text-muted">
+                    {[currentVideo.channelTitle, videoMeta(currentVideo)].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
+                <IconButton icon="ti-player-skip-back" label="Previous song" onClick={() => jumpTo(nowPlaying.index - 1)} disabled={nowPlaying.index === 0} />
+                <IconButton
+                  icon="ti-player-skip-forward"
+                  label="Next song"
+                  onClick={playNext}
+                  disabled={nowPlaying.index + 1 >= nowPlaying.list.length}
+                />
+              </div>
             </div>
 
-            <div className="scroll-area flex min-h-0 flex-1 flex-col gap-2 overflow-auto xl:w-[300px] xl:flex-none">
-              <p className="text-sm font-medium">Up next</p>
-              {nowPlaying.list.map((video, index) => {
-                const isCurrent = index === nowPlaying.index;
-                return (
-                  <button
-                    key={video.id}
-                    type="button"
-                    onClick={() => play(nowPlaying.list, index)}
-                    aria-current={isCurrent ? "true" : undefined}
-                    className={`flex min-w-0 gap-2 rounded-lg! p-1 text-left ${isCurrent ? "bg-white/10!" : "hover:bg-white/5!"}`}
-                  >
-                    <Thumbnail video={video} className="aspect-video w-[120px] rounded-lg" />
-                    <span className="min-w-0">
-                      <span className="line-clamp-2 text-xs font-medium leading-snug">{video.title}</span>
-                      <span className="mt-1 block truncate text-[11px] text-muted">
-                        {isCurrent ? "Now playing" : video.channelTitle}
+            <div className="flex min-h-0 flex-1 flex-col xl:w-[300px] xl:flex-none">
+              <div className="mb-2 min-w-0">
+                <p className="truncate text-sm font-medium">{upNextTitle}</p>
+                {upNextSubtitle ? <p className="truncate text-[11px] text-muted">{upNextSubtitle}</p> : null}
+              </div>
+
+              <div className="scroll-area flex min-h-0 flex-1 flex-col gap-2 overflow-auto">
+                {nowPlaying.list.map((video, index) => {
+                  const isCurrent = index === nowPlaying.index;
+                  return (
+                    <button
+                      key={`${video.id}-${index}`}
+                      type="button"
+                      onClick={() => jumpTo(index)}
+                      aria-current={isCurrent ? "true" : undefined}
+                      className={`flex min-w-0 gap-2 rounded-lg! p-1 text-left ${isCurrent ? "bg-white/10!" : "hover:bg-white/5!"}`}
+                    >
+                      <Thumbnail video={video} className="aspect-video w-[120px] rounded-lg" />
+                      <span className="min-w-0">
+                        <span className="line-clamp-2 text-xs font-medium leading-snug">{video.title}</span>
+                        <span className="mt-1 block truncate text-[11px] text-muted">
+                          {isCurrent ? "Now playing" : video.channelTitle}
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         ) : null}
@@ -473,6 +670,9 @@ export function MusicPanel() {
         {showMiniPlayer && currentVideo ? (
           <div className="absolute bottom-[215px] right-3 z-20 flex w-[356px] max-w-[calc(100%-24px)] items-center gap-2 rounded-lg bg-[#212121] px-3 py-1.5">
             <span className="min-w-0 flex-1 truncate text-xs">{currentVideo.title}</span>
+            <button type="button" onClick={playNext} aria-label="Next song" className="flex h-7 w-7 items-center justify-center hover:bg-white/10!">
+              <i className="ti ti-player-skip-forward" aria-hidden="true" />
+            </button>
             <button type="button" onClick={() => setView("watch")} aria-label="Expand player" className="flex h-7 w-7 items-center justify-center hover:bg-white/10!">
               <i className="ti ti-arrows-maximize" aria-hidden="true" />
             </button>
